@@ -3,7 +3,8 @@ import random
 
 import igraph
 
-from itertools import islice
+import traversal
+
 
 # TODO: this currently implements some behavior specific to undirected graphs;
 #       abstract this out with a subclass and/or mixin
@@ -81,6 +82,12 @@ class BaseGraph:
 		self._re_map[e] = re
 		self._e_map[re] = e
 
+	def num_vertices(self):
+		return self._rg.vcount()
+
+	def num_edges(self):
+		return self._rg.ecount()
+
 	def vertices(self):
 		return iter(self._rv_map)
 
@@ -88,7 +95,8 @@ class BaseGraph:
 		return iter(self._re_map)
 
 	def _incident(self, v, mode):
-		res = self._rg.incident(v, mode=mode)
+		rv = self._rv_from_v(v)
+		res = self._rg.incident(rv, mode=mode)
 		# Make a collection now; We do NOT want lazy evaluation! (the raw indices could get invalidated)
 		return tuple(map(self._e_from_re, res))
 
@@ -209,6 +217,18 @@ class BaseGraph:
 		re = self._re_from_e(e)
 		return self._rg.es[re]
 
+	def dfs_rooted(self, *args, **kwargs):
+		return traversal.dfs_rooted(self, *args, **kwargs)
+
+	def bfs_rooted(self, *args, **kwargs):
+		return traversal.bfs_rooted(self, *args, **kwargs)
+
+	def dfs_full(self, *args, **kwargs):
+		return traversal.dfs_full(self, *args, **kwargs)
+
+	def bfs_full(self, *args, **kwargs):
+		return traversal.bfs_full(self, *args, **kwargs)
+
 
 def common_prefix(*iterables):
 	if len(iterables) == 0:
@@ -225,6 +245,18 @@ def common_prefix(*iterables):
 assert(common_prefix([0,'a',3,2,6,6,7], [0,'a',3,2,9,6]) == [0,'a',3,2])
 assert(common_prefix([0,'a',3,2,6,6,7]) == [0,'a',3,2,6,6,7])
 
+# test example
+# TODO: remove or put elsewhere
+def dfs_preorder_postorder(graph):
+	preorder = []
+	postorder = []
+	graph.dfs_full(
+		start_vertex = lambda g,v: preorder.append(v),
+		discover_vertex = lambda g,v: preorder.append(v),
+		finish_vertex = lambda g,v: postorder.append(v),
+		)
+	assert len(preorder) == len(postorder) == graph.num_vertices()
+	return preorder,postorder
 
 g = BaseGraph()
 g.add_vertices([chr(ord('A')+i) for i in range(10)])
@@ -244,4 +276,6 @@ g.add_edge('G', 'J')
 g.add_edge('I', 'J')
 g.add_edge('F', 'H')
 
-
+pre,post = dfs_preorder_postorder(g)
+print(pre)
+print(post)
