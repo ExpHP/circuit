@@ -107,7 +107,7 @@ class Battery(Component):
 		return self.direction_sign(sourceVertex) * self._potential
 
 
-class Circuit(BaseGraph):
+class Circuit(UndirectedGraph):
 	def add_resistor(self, v1, v2, resistance):
 		component = Resistor(resistance, (v1,v2))
 		self.add_edge(v1,v2,component=component)

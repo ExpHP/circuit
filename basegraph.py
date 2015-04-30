@@ -5,9 +5,12 @@ import igraph
 
 import traversal
 
+# TODO: storing the vertex and edge names as an attribute may be a better
+#       alternative to the dicts I'm storing.  In particular, igraph already
+#       has a 'name' attribute, which may (or may not) itself be sufficient.
 
-# TODO: this currently implements some behavior specific to undirected graphs;
-#       abstract this out with a subclass and/or mixin
+# TODO: stop making TODO notes inside source files that just stick around
+#       forever and, like, I dunno, maybe write issues on GitHub instead?
 
 class BaseGraph:
 
@@ -21,7 +24,7 @@ class BaseGraph:
 	# - values that enter or leave this class are e and v --- NEVER re and rv.
 
 	def __init__(self):
-		self._rg = igraph.Graph()
+		self._rg = igraph.Graph(directed=self.is_directed())
 
 		self._next_e = 0
 
@@ -124,26 +127,15 @@ class BaseGraph:
 	# General method for obtaining the other vertex of an edge...
 	#  but ONLY if the specified vertex is a valid source. (else, error)
 	def edge_target_given_source(self, e, vSource):
-		source,target = self.edge_endpoints(e)
-		if   vSource == source:
-			return target
-		elif vSource == target: # FIXME directed should not allow this
-			return source
-		else:
-			raise ValueError('vertex {} cannot be the source of edge'
-				' {} (which connects {} to {})'.format(vSource,e,source,target))
+		raise NotImplementedError()
 
 	# General method for obtaining the other vertex of an edge...
 	#  but ONLY if specified vertex is a valid target. (else, error)
 	def edge_source_given_target(self, e, vTarget):
-		source,target = self.edge_endpoints(e)
-		if   vTarget == target:
-			return source
-		elif vTarget == source: # FIXME directed should not allow this
-			return target
-		else:
-			raise ValueError('vertex {} cannot be the target of edge'
-				' {} (which connects {} to {})'.format(vTarget,e,source,target))
+		raise NotImplementedError()
+
+	def is_directed(self):
+		raise NotImplementedError()
 
 	def spanning_forest(self):
 		''' Returns an arbitrary spanning tree forest as a dict of {v: edgeFromParent}
@@ -230,6 +222,25 @@ class BaseGraph:
 	def bfs_full(self, *args, **kwargs):
 		return traversal.bfs_full(self, *args, **kwargs)
 
+class UndirectedGraph(BaseGraph):
+	def _edge_other_endpoint_impl(self, e, v, name='an endpoint'):
+		source,target = self.edge_endpoints(e)
+		if   v == source:
+			return target
+		elif v == target:
+			return source
+		else:
+			raise ValueError('vertex {} cannot be {} of edge'
+				' {} (which connects {} to {})'.format(v,name,e,source,target))
+
+	def edge_target_given_source(self, e, v):
+		return self._edge_other_endpoint_impl(e, v, 'the source')
+
+	def edge_source_given_target(self, e, v):
+		return self._edge_other_endpoint_impl(e, v, 'the target')
+
+	def is_directed(self):
+		return False
 
 def common_prefix(*iterables):
 	if len(iterables) == 0:
@@ -259,7 +270,7 @@ def dfs_preorder_postorder(graph):
 	assert len(preorder) == len(postorder) == graph.num_vertices()
 	return preorder,postorder
 
-g = BaseGraph()
+g = UndirectedGraph()
 g.add_vertices([chr(ord('A')+i) for i in range(10)])
 g.add_edge('A', 'B')
 g.add_edge('A', 'H')
