@@ -165,8 +165,6 @@ class Circuit(UndirectedGraph):
 		# Solve linear system
 		cycle_currents = np.linalg.solve(R,V).reshape([len(cyclebasis)])
 
-		print('cycle currents: {}'.format(cycle_currents))
-
 		# Build result:  a property map of {edge: current}
 		edge_currents = {}
 		for e in self.edges():
