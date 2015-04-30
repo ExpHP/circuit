@@ -145,6 +145,19 @@ class BaseGraph:
 			raise ValueError('vertex {} cannot be the target of edge'
 				' {} (which connects {} to {})'.format(vTarget,e,source,target))
 
+	def spanning_forest(self):
+		''' Returns an arbitrary spanning tree forest as a dict of {v: edgeFromParent}
+
+		The root of each tree is omitted from the dict. '''
+		backedges = {}
+
+		def handle_tree_edge(g,e,source):
+			target = g.edge_target_given_source(e,source)
+			backedges[target] = e
+
+		self.bfs_full(tree_edge = handle_tree_edge)
+		return backedges
+
 	def cycle_basis(self):
 		''' Generate and return a cycle basis for the graph as a list of paths.
 
@@ -157,24 +170,13 @@ class BaseGraph:
 		# - Make a spanning tree/forest. ANY tree will do.
 		# - For each non-tree edge, traverse the tree between the endpoints to complete a cycle.
 
-		# FIXME: This algo currently assumes the graph is all connected, and just generates
-		#   a single rooted tree (instead of a forest)
-
-		# get tree structure
-		eBackEdges = {}
-		vRoot = self.random_vertex()
-		rvRoot = self._rv_from_v(vRoot)
-		for (vobjNode, distance, vobjPred) in self._rg.bfsiter(rvRoot, mode=igraph.OUT, advanced=True):
-			if vobjPred is None: continue
-			vNode = self._v_from_rv(vobjNode.index)
-			vPred = self._v_from_rv(vobjPred.index) if vobjPred is not None else None
-			eBackEdges[vNode] = self.arbitrary_edge(vPred, vNode)
+		eBackEdges = self.spanning_forest()
 
 		# helper method - returns list of edges from root to v
 		def path_from_root(v):
 			result = []
 
-			while v != vRoot:
+			while v in eBackEdges:
 				result.append(eBackEdges[v])
 				v = self.edge_source_given_target(eBackEdges[v], v)
 
@@ -204,7 +206,6 @@ class BaseGraph:
 		return cycles
 
 	def random_vertex(self):
-		print(list(self._rg.vs))
 		rvCount = self._rg.vcount()
 		rv = random.randrange(rvCount)
 		return self._v_from_rv(rv)

@@ -1,4 +1,5 @@
 
+import collections
 
 class BfsVisitor:
 	def start_vertex(self, g, v):
@@ -121,6 +122,44 @@ def dfs_rooted(graph, root, visited=None, visitor=None, **callbacks):
 
 	_dfs_rooted_impl(graph, root, visitor, visited)
 	return visited
+
+def _bfs_rooted_impl(graph, root, visitor, visited):
+
+	seen = set(visited)
+	seen.add(root)
+
+	visitor.start_vertex(graph, root)
+
+	queue = collections.deque()
+	queue.append(root)
+
+	while len(queue) > 0:
+		v = queue.popleft()
+
+		assert v not in visited
+		visited.add(v)
+
+		visitor.examine_vertex(graph, v)
+
+		for e in graph.out_edges(v):
+			visitor.examine_edge(graph, e, v)
+
+			target = graph.edge_target_given_source(e, v)
+
+			if target not in seen:
+				seen.add(target)
+				visitor.discover_vertex(graph, v)
+				visitor.tree_edge(graph, e, v)
+
+				queue.append(target)
+
+			else:
+				visitor.non_tree_edge(graph, e, v)
+
+		visitor.finish_vertex(graph, v)
+
+	assert len(visited) == len(seen)
+
 
 def _dfs_rooted_impl(graph, root, visitor, visited):
 	# Written in an iterative fashion due to Python's limited support for recursion.
