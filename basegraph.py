@@ -5,14 +5,11 @@ import igraph
 
 import traversal
 
-# TODO: storing the vertex and edge names as an attribute may be a better
-#       alternative to the dicts I'm storing.  In particular, igraph already
-#       has a 'name' attribute, which may (or may not) itself be sufficient.
-
-# TODO: stop making TODO notes inside source files that just stick around
-#       forever and, like, I dunno, maybe write issues on GitHub instead?
-
 class BaseGraph:
+
+	# names of igraph attributes used to store fixed vertex/edge ids
+	V_ATTRIBUTE = 'vlabel'
+	E_ATTRIBUTE = 'elabel'
 
 	# A bit of apps hungarian:
 	#     v: a vertex id (as exposed to user, never changes)
@@ -26,6 +23,10 @@ class BaseGraph:
 	def __init__(self):
 		self._rg = igraph.Graph(directed=self.is_directed())
 
+		# force igraph to add the attributes
+		self._rg.vs[self.V_ATTRIBUTE] = []
+		self._rg.es[self.E_ATTRIBUTE] = []
+
 		self._next_e = 0
 
 		self._rv_map = {}
@@ -33,57 +34,57 @@ class BaseGraph:
 		self._re_map = {}
 		self._e_map  = {}
 
-	# TODO: Implement these properly before exposing any 'delete' methods.
 	def _v_from_rv(self, rv): return self._v_map[rv]
 	def _rv_from_v(self, v):  return self._rv_map[v]
 	def _e_from_re(self, re): return self._e_map[re]
 	def _re_from_e(self, e):  return self._re_map[e]
 
-	def add_vertices(self, vs):
+	def has_vertex(self, v):
+		return v in self._rv_map
 
+	def add_vertices(self, vs):
 		vs = list(vs)
+
 		if len(vs) != len(set(vs)):
 			raise ValueError('vertex {} specified multiple times'.format(repr(v)))
 
 		for v in vs:
-			if v in self._rv_map:
+			if self.has_vertex(v):
 				raise ValueError('Vertex {} already in graph!'.format(repr(v)))
 
-		# gather (expected) indices of new vertices
-		rvFirst = self._rg.vcount()
-		rvs = range(rvFirst, rvFirst + len(vs))
+		self._rg.add_vertices(v for v in vs)
+		self._rg.vs[-len(vs):][self.V_ATTRIBUTE] = vs
+		self._update_v_maps()
 
-		v_rv_pairs = list(zip(vs,rvs))
-		self._rv_map.update(
-			{v:rv for (v,rv) in v_rv_pairs}
-		)
-		self._v_map.update(
-			{rv:v for (v,rv) in v_rv_pairs}
-		)
+	def _update_v_maps(self):
+		self._rv_map.clear()
+		self._v_map.clear()
+		for rv,v in enumerate(self._rg.vs[self.V_ATTRIBUTE]):
+			self._rv_map[v] = rv
+			self._v_map[rv] = v
 
-		self._rg.add_vertices(len(vs))
+	def _update_e_maps(self):
+		self._re_map.clear()
+		self._e_map.clear()
+		for re,e in enumerate(self._rg.es[self.E_ATTRIBUTE]):
+			self._re_map[e] = re
+			self._e_map[re] = e
 
-		assert(rvs.stop == self._rg.vcount())
-
-	def _predict_new_res(self, n):
-		reFirst = self._rg.ecount()
-		return range(reFirst, reFirst + n)
-
-	def _predict_new_rvs(self, n):
-		rvFirst = self._rg.vcount()
-		return range(rvFirst, rvFirst + n)
+	def _predict_next_re(self):
+		return self._rg.ecount()
 
 	def add_edge(self, v1, v2, **kwargs):
-		rv1, rv2 = self._rv_from_v(v1), self._rv_from_v(v2)
-		re, = self._predict_new_res(1)
+		re = self._predict_next_re()
 
 		e = self._next_e
 		self._next_e += 1
 
-		self._rg.add_edge(rv1, rv2, **kwargs)
-
 		self._re_map[e] = re
 		self._e_map[re] = e
+
+		rv1, rv2 = self._rv_from_v(v1), self._rv_from_v(v2)
+		self._rg.add_edge(rv1, rv2, **kwargs)
+		self._rg.es[self._rg.ecount()-1][self.E_ATTRIBUTE] = e
 
 	def num_vertices(self):
 		return self._rg.vcount()
