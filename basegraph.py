@@ -42,6 +42,12 @@ class BaseGraph:
 	def has_vertex(self, v):
 		return v in self._rv_map
 
+	def delete_vertices(self, vs):
+		rvs = list(self._rv_from_v(v) for v in vs)
+		self._rg.delete_vertices(rvs)
+		self._update_v_maps()
+		self._update_e_maps()
+
 	def add_vertices(self, vs):
 		vs = list(vs)
 
