@@ -52,7 +52,7 @@ class BaseGraph:
 			if self.has_vertex(v):
 				raise ValueError('Vertex {} already in graph!'.format(repr(v)))
 
-		self._rg.add_vertices(v for v in vs)
+		self._rg.add_vertices(len(vs))
 		self._rg.vs[-len(vs):][self.V_ATTRIBUTE] = vs
 		self._update_v_maps()
 
