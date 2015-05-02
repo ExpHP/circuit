@@ -40,6 +40,10 @@ class Vertex:
 		self._row = row
 		self._col = col
 
+		# object used for hashing and equality testing.
+		# stored as a member in response to profiling tests
+		self._value_tuple = (row, col)
+
 	@property
 	def row(self): return self._row
 	@property
@@ -61,12 +65,10 @@ class Vertex:
 			y += 0.5 * ((self.row + self.col + 1) % 2) # adjust every other point for zigzag
 			return y
 
-	def _value_tuple(self):
-		return (self.row, self.col)
 	def __eq__(self, other):
-		return self._value_tuple() == other._value_tuple()
+		return self._value_tuple == other._value_tuple
 	def __hash__(self):
-		return hash(self._value_tuple())
+		return hash(self._value_tuple)
 	def __repr__(self):
 		return 'Vertex({},{})'.format(self.row, self.col)
 
@@ -153,6 +155,9 @@ def show_trial(nrows, ncols, steps, fitupto):
 
 	plt.show()
 
+def bench_trial(nrows, ncols, steps):
+	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
+
 def do_visualize(g):
 
 	xs = np.array([v.x for v in g.vertices()])
@@ -170,5 +175,7 @@ def do_visualize(g):
 	ax.add_collection(lc)
 	plt.show()
 
-show_trial(20,6,steps=100,fitupto=20)
+import cProfile
+#show_trial(20,6,steps=100,fitupto=20)
+cProfile.run('bench_trial(10,6,steps=20)',sort='tottime')
 #do_visualize(g)
