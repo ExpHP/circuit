@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from basegraph import *
+from graphs.basegraph import *
 
 __all__ = [
 	'Component',
@@ -198,5 +198,12 @@ def test_two_loop_circuit():
 	circuit.add_resistor('top', 'right', 1.0)
 	print(circuit.compute_currents())
 
+def iterN(n, f, *a, **kw):
+	for _ in range(n):
+		f(*a, **kw)
+
 test_two_separate_loops()
 test_two_loop_circuit()
+
+import cProfile
+#cProfile.run('iterN(100, randomtest)',sort='tottime')

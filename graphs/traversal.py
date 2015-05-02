@@ -129,6 +129,7 @@ def _bfs_rooted_impl(graph, root, visitor, visited):
 	seen.add(root)
 
 	visitor.start_vertex(graph, root)
+	visitor.discover_vertex(graph, root)
 
 	queue = collections.deque()
 	queue.append(root)
@@ -166,6 +167,7 @@ def _dfs_rooted_impl(graph, root, visitor, visited):
 	# Here be dragons
 
 	visitor.start_vertex(graph, root)
+	visitor.discover_vertex(graph, root)
 
 	# stack contains:
 	# (src_edge, vertex, out_edge_iter)
@@ -209,5 +211,3 @@ def _dfs_rooted_impl(graph, root, visitor, visited):
 				# Visit target on next iteration
 				stack.append((e, target, iter(graph.out_edges(target))))
 
-
-	

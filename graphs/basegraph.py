@@ -3,7 +3,7 @@ import random
 
 import igraph
 
-import traversal
+from . import traversal
 
 class BaseGraph:
 
@@ -263,38 +263,3 @@ def common_prefix(*iterables):
 
 assert(common_prefix([0,'a',3,2,6,6,7], [0,'a',3,2,9,6]) == [0,'a',3,2])
 assert(common_prefix([0,'a',3,2,6,6,7]) == [0,'a',3,2,6,6,7])
-
-# test example
-# TODO: remove or put elsewhere
-def dfs_preorder_postorder(graph):
-	preorder = []
-	postorder = []
-	graph.dfs_full(
-		start_vertex = lambda g,v: preorder.append(v),
-		discover_vertex = lambda g,v: preorder.append(v),
-		finish_vertex = lambda g,v: postorder.append(v),
-		)
-	assert len(preorder) == len(postorder) == graph.num_vertices()
-	return preorder,postorder
-
-g = UndirectedGraph()
-g.add_vertices([chr(ord('A')+i) for i in range(10)])
-g.add_edge('A', 'B')
-g.add_edge('A', 'H')
-g.add_edge('B', 'C')
-g.add_edge('B', 'E')
-g.add_edge('B', 'I')
-g.add_edge('C', 'F')
-g.add_edge('D', 'F')
-g.add_edge('D', 'G')
-g.add_edge('E', 'F')
-g.add_edge('F', 'G')
-g.add_edge('F', 'I')
-g.add_edge('F', 'I')
-g.add_edge('G', 'J')
-g.add_edge('I', 'J')
-g.add_edge('F', 'H')
-
-pre,post = dfs_preorder_postorder(g)
-print(pre)
-print(post)
