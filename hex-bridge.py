@@ -34,7 +34,8 @@ import numpy as np
 #  |   |   |   |
 #  *-*-*-*-*-*-*
 #
-class Vertex():
+
+class Vertex:
 	def __init__(self, row, col):
 		self._row = row
 		self._col = col
@@ -47,12 +48,18 @@ class Vertex():
 	# geometric position of the point on the hexagonal grid that the vertex represents
 	@property
 	def x(self):
-		return 0.5 * math.sqrt(3) * self.col
+		if self == self.TOP_CONNECTOR: return -4.0
+		elif self == self.BOT_CONNECTOR: return -1.0
+		else:
+			return 0.5 * math.sqrt(3) * self.col
 	@property
 	def y(self):
-		y = 1.5 * self.row # baseline height of row
-		y += 0.5 * ((self.row + self.col + 1) % 2) # adjust every other point for zigzag
-		return y
+		if self in (self.TOP_CONNECTOR, self.BOT_CONNECTOR):
+			return -3.0
+		else:
+			y = 1.5 * self.row # baseline height of row
+			y += 0.5 * ((self.row + self.col + 1) % 2) # adjust every other point for zigzag
+			return y
 
 	def _value_tuple(self):
 		return (self.row, self.col)
@@ -63,6 +70,9 @@ class Vertex():
 	def __repr__(self):
 		return 'Vertex({},{})'.format(self.row, self.col)
 
+# special constants
+Vertex.TOP_CONNECTOR = Vertex(-1,0)
+Vertex.BOT_CONNECTOR = Vertex(-1,1)
 
 
 
@@ -91,21 +101,62 @@ def make_hex_bridge_circuit(cellrows, cellcols):
 		for col in range(row % 2, ncols, 2):
 			g.add_resistor(Vertex(row+1,col), Vertex(row, col), 1)
 
+	# HACK
+	g.add_vertices([Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR])
+	g.add_battery(Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR, 100.0)
+	for col in range(1,ncols,2):
+		g.add_resistor(Vertex(0,col), Vertex.BOT_CONNECTOR, 1.0)
+	for col in range(nrows%2+1, ncols, 2):
+		g.add_resistor(Vertex(nrows-1,col), Vertex.TOP_CONNECTOR, 1.0)
+
 	return g
 
 g = make_hex_bridge_circuit(10,6)
-g.add_battery(Vertex(0,3), Vertex(13,3), 100.)
-print(g.compute_currents())
+#print(g.compute_currents())
 
 
-def do_visualize():
-	import matplotlib.pyplot as plt
-	from matplotlib import collections as mc
+def run_trial(nrows, ncols, steps):
+	g = make_hex_bridge_circuit(nrows,ncols)
 
-	g = make_hex_bridge_circuit(10,6)
+	battery = g.arbitrary_edge(Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR)
+
+	step_currents = []
+	for stepnum in range(steps):
+		step_currents.append(g.compute_currents()[battery])
+
+		r = g.random_vertex()
+		while r in (Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR):
+			r = g.random_vertex()
+
+		g.delete_vertices([r])
+	return step_currents
+
+import matplotlib.pyplot as plt
+from matplotlib import collections as mc
+
+def show_trial(nrows, ncols, steps, fitupto):
+	x = range(steps)
+
+	fig,ax = plt.subplots()
+	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
+	for y in ys:
+		ax.plot(x,y)
+	plt.show()
+
+	avg = np.sum(ys,axis=0)/len(ys)
+	fig,ax = plt.subplots()
+	ax.set_aspect('equal')
+	ax.plot(x,avg)
+
+	p = np.polyfit(x[:fitupto],avg[:fitupto],1)
+	ax.plot(x,np.polyval(p,x), ':g')
+
+	plt.show()
+
+def do_visualize(g):
+
 	xs = np.array([v.x for v in g.vertices()])
 	ys = np.array([v.y for v in g.vertices()])
-	g.add_resistor(Vertex(0,5), Vertex(13,5), 0.)
 
 	lines = []
 	for e in g.edges():
@@ -113,11 +164,11 @@ def do_visualize():
 		lines.append(((u.x,u.y), (v.x,v.y)))
 	lc = mc.LineCollection(lines, colors='k',linewidths=2)
 
-	print(xs)
-
 	fig,ax = plt.subplots()
 	ax.set_aspect('equal')
 	ax.scatter(xs,ys,s=25.)
 	ax.add_collection(lc)
 	plt.show()
 
+show_trial(20,6,steps=100,fitupto=20)
+#do_visualize(g)
