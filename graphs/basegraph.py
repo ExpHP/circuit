@@ -3,9 +3,126 @@ import random
 
 import igraph
 
-from . import traversal
+from . import algorithm
 
-class BaseGraph:
+# For methods which are not affected by directedness
+# (or which are currently written in a directed-agnostic manner)
+class AdjacencyListBase:
+
+	def __init__(self):
+		self._next_e = 0
+
+		self._adj = {}  # dict of sets of edges
+		self._edge_endpoints = {}
+		self._edge_attributes = {}
+
+	def num_vertices(self):
+		return len(self._adj)
+
+	def num_edges(self):
+		return len(self._edge_endpoints)
+
+	def vertices(self):
+		return iter(self._adj)
+
+	def edges(self):
+		return iter(self._edge_endpoints)
+
+	def edge_endpoints(self, e):
+		return self._edge_endpoints[e]
+
+	def edge_attribute(self, e, attr):
+		return self._edge_attributes[e][attr]
+
+	def has_vertex(self, v):
+		return v in self._adj
+
+	def random_vertex(self):
+		# NOTE: making a list is, of course, O(V) in complexity :/
+		# Also note that dict.popitem() is arbitrary; not stictly random.
+		return random.choice(list(self._adj))
+
+	def add_vertices(self, vs):
+		vs = list(vs)
+
+		if len(vs) != len(set(vs)):
+			raise ValueError('vertex specified multiple times')
+
+		if any(map(self.has_vertex,vs)):
+			raise ValueError('Vertex {} already in graph!'.format(repr(v)))
+
+		for v in vs:
+			self._adj[v] = set()
+
+	def delete_vertices(self, vs):
+		es = set()
+		for v in vs:
+			es.update(self.incident_edges(v))
+
+		self.delete_edges(es)
+		for v in vs:
+			del self._adj[v]
+
+	def all_edges(self, v1, v2):
+		result = []
+		for e in self.out_edges(v1):
+			if self.edge_target_given_source(e,v1) == v2:
+				result.append(e)
+		return result
+
+	def arbitrary_edge(self, v1, v2):
+		return self.all_edges(v1, v2)[0]
+
+# Methods which must change to take directedness into account (keep this list small)
+class UndirectedGraph(AdjacencyListBase, algorithm.AlgorithmMixin):
+
+	def is_directed(self):
+		return False
+
+	def add_edge(self, v1, v2, **kwargs):
+		e = self._next_e
+		self._next_e += 1
+
+		self._adj[v1].add(e)
+		self._adj[v2].add(e)
+		self._edge_endpoints[e] = (v1,v2)
+		self._edge_attributes[e] = dict(kwargs)
+
+	def delete_edges(self, es):
+		for e in es:
+			source, target = self.edge_endpoints(e)
+			self._adj[source].remove(e)
+			self._adj[target].remove(e)
+
+			del self._edge_endpoints[e]
+			del self._edge_attributes[e]
+
+	def incident_edges(self, v):
+		return iter(self._adj[v])
+	def in_edges(self, v):
+		return iter(self._adj[v])
+	def out_edges(self, v):
+		return iter(self._adj[v])
+
+	def _edge_other_endpoint_impl(self, e, v, name='an endpoint'):
+		source,target = self.edge_endpoints(e)
+		if   v == source:
+			return target
+		elif v == target:
+			return source
+		else:
+			raise ValueError('vertex {} cannot be {} of edge'
+				' {} (which connects {} to {})'.format(v,name,e,source,target))
+
+	def edge_target_given_source(self, e, v):
+		return self._edge_other_endpoint_impl(e, v, 'the source')
+
+	def edge_source_given_target(self, e, v):
+		return self._edge_other_endpoint_impl(e, v, 'the target')
+
+
+# Alternate graph storage type
+class IgraphBaseGraph:
 
 	# names of igraph attributes used to store fixed vertex/edge ids
 	V_ATTRIBUTE = 'vlabel'
@@ -52,7 +169,7 @@ class BaseGraph:
 		vs = list(vs)
 
 		if len(vs) != len(set(vs)):
-			raise ValueError('vertex {} specified multiple times'.format(repr(v)))
+			raise ValueError('vertex specified multiple times')
 
 		for v in vs:
 			if self.has_vertex(v):
@@ -125,84 +242,13 @@ class BaseGraph:
 
 	# Get the source and target vertices of an edge.
 	def edge_endpoints(self, e):
-		re = self._re_from_e(e)
-		rvSource = self._rg.es[re].source
-		rvTarget = self._rg.es[re].target
-
+		eobj = self._igraph_edge(e)
+		rvSource = eobj.source
+		rvTarget = eobj.target
 		return self._v_from_rv(rvSource), self._v_from_rv(rvTarget)
 
-	# General method for obtaining the other vertex of an edge...
-	#  but ONLY if the specified vertex is a valid source. (else, error)
-	def edge_target_given_source(self, e, vSource):
-		raise NotImplementedError()
-
-	# General method for obtaining the other vertex of an edge...
-	#  but ONLY if specified vertex is a valid target. (else, error)
-	def edge_source_given_target(self, e, vTarget):
-		raise NotImplementedError()
-
-	def is_directed(self):
-		raise NotImplementedError()
-
-	def spanning_forest(self):
-		''' Returns an arbitrary spanning tree forest as a dict of {v: edgeFromParent}
-
-		The root of each tree is omitted from the dict. '''
-		backedges = {}
-
-		def handle_tree_edge(g,e,source):
-			target = g.edge_target_given_source(e,source)
-			backedges[target] = e
-
-		self.bfs_full(tree_edge = handle_tree_edge)
-		return backedges
-
-	def cycle_basis(self):
-		''' Generate and return a cycle basis for the graph as a list of paths.
-
-		A cycle basis is a minimal-size set of cycles such that any cycle in the
-		graph can be defined as the XOR sum of cycles in the basis.
-
-		Note that, generally speaking, the cycle basis of a graph is NOT unique.'''
-
-		# Algorithm:
-		# - Make a spanning tree/forest. ANY tree will do.
-		# - For each non-tree edge, traverse the tree between the endpoints to complete a cycle.
-
-		eBackEdges = self.spanning_forest()
-
-		# helper method - returns list of edges from root to v
-		def path_from_root(v):
-			result = []
-
-			while v in eBackEdges:
-				result.append(eBackEdges[v])
-				v = self.edge_source_given_target(eBackEdges[v], v)
-
-			result.reverse()
-			return result
-
-		# build a cycle from each non-tree edge
-		cycles = []
-		eTreeEdges = set(eBackEdges.values())
-		for e in self.edges():
-			if e not in eTreeEdges:
-
-				# find paths from root to each node
-				source, target = self.edge_endpoints(e)
-				sourcePath = path_from_root(source)
-				targetPath = path_from_root(target)
-
-				# length of path to common ancestor
-				iFrom = len(common_prefix(sourcePath, targetPath))
-
-				cycle = [e]                                # source to target (via non-tree edge)
-				cycle.extend(reversed(targetPath[iFrom:])) # target to ancestor (along tree)
-				cycle.extend(sourcePath[iFrom:])           # ancestor to source (along tree)
-
-				cycles.append(cycle)
-
-		return cycles
+	def edge_attribute(self, e, attr):
+		return self._igraph_edge(e)[attr]
 
 	def random_vertex(self):
 		rvCount = self._rg.vcount()
@@ -217,19 +263,7 @@ class BaseGraph:
 		re = self._re_from_e(e)
 		return self._rg.es[re]
 
-	def dfs_rooted(self, *args, **kwargs):
-		return traversal.dfs_rooted(self, *args, **kwargs)
-
-	def bfs_rooted(self, *args, **kwargs):
-		return traversal.bfs_rooted(self, *args, **kwargs)
-
-	def dfs_full(self, *args, **kwargs):
-		return traversal.dfs_full(self, *args, **kwargs)
-
-	def bfs_full(self, *args, **kwargs):
-		return traversal.bfs_full(self, *args, **kwargs)
-
-class UndirectedGraph(BaseGraph):
+class IgraphUndirectedGraph(IgraphBaseGraph, algorithm.AlgorithmMixin):
 	def _edge_other_endpoint_impl(self, e, v, name='an endpoint'):
 		source,target = self.edge_endpoints(e)
 		if   v == source:
@@ -248,18 +282,3 @@ class UndirectedGraph(BaseGraph):
 
 	def is_directed(self):
 		return False
-
-def common_prefix(*iterables):
-	if len(iterables) == 0:
-		raise ValueError('no iterables provided!')
-
-	result = []
-	for values in zip(*iterables):
-		if any(v != values[0] for v in values[1:]):
-			break
-		result.append(values[0])
-
-	return result
-
-assert(common_prefix([0,'a',3,2,6,6,7], [0,'a',3,2,9,6]) == [0,'a',3,2])
-assert(common_prefix([0,'a',3,2,6,6,7]) == [0,'a',3,2,6,6,7])

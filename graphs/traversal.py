@@ -211,3 +211,16 @@ def _dfs_rooted_impl(graph, root, visitor, visited):
 				# Visit target on next iteration
 				stack.append((e, target, iter(graph.out_edges(target))))
 
+# Mixin for graphs to provide traversal functions
+class TraversalMixin:
+	def dfs_rooted(self, *args, **kwargs):
+		return dfs_rooted(self, *args, **kwargs)
+
+	def bfs_rooted(self, *args, **kwargs):
+		return bfs_rooted(self, *args, **kwargs)
+
+	def dfs_full(self, *args, **kwargs):
+		return dfs_full(self, *args, **kwargs)
+
+	def bfs_full(self, *args, **kwargs):
+		return bfs_full(self, *args, **kwargs)

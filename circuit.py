@@ -121,7 +121,7 @@ class Circuit(UndirectedGraph):
 		self.add_edge(v1,v2,component=component)
 
 	def edge_component(self, e):
-		return self._igraph_edge(e).attributes()['component']
+		return self.edge_attribute(e, 'component')
 
 	def path_total_voltage(self, path):
 		acc = 0.0
