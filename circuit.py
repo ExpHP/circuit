@@ -1,13 +1,11 @@
 
 import numpy as np
+from scipy import sparse
+import scipy.sparse.linalg as spla
 
 from graphs.basegraph import *
 
 __all__ = [
-	'Component',
-	'Resistor',
-	'Capacitor',
-	'Battery',
 	'Circuit',
 ]
 
@@ -54,54 +52,33 @@ def _vertices_from_path(g, edgelist):
 #  can determine the direction of edges as we iterate over them)
 def _iter_path_with_sources(g, edgelist):
 	vs = _vertices_from_path(g, edgelist)
-	yield from zip(edgelist, vs[:-1])
+	return iter(zip(edgelist, vs[:-1]))
 
 # An electrical component which rests on a graph edge.
 class Component:
 	# Create a component given a (source, target) tuple specifying its positive direction.
-	def __init__(self, endpoints):
+	def __init__(self, endpoints, *, voltage=0.0, resistance=0.0):
 		self._endpoints = endpoints
+		self._potential = voltage
+		self._resistance = resistance
+
+	@classmethod
+	def make_battery(cls, endpoints, voltage):
+		obj = cls()
+		obj._potential = voltage
+		return obj
+
+	@classmethod
+	def make_resistor(cls, endpoints, resistance):
+		obj = cls()
+		obj._resistance = resistance
+		return obj
 
 	def direction_sign(self, sourceVertex):
 		return _sign_from_source_vertex(self._endpoints, sourceVertex)
 
-	def resistance(self, sourceVertex):
-		raise NotImplementedError()
-
-	def voltage(self, sourceVertex):
-		raise NotImplementedError()
-
-class Resistor(Component):
-	def __init__(self, resistance, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._resistance = resistance
-
 	def resistance(self):
 		return self._resistance
-
-	def voltage(self, sourceVertex):
-		return 0.0
-
-class Capacitor(Component):
-	def __init__(self, capacitance, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.capacitance = capacitance
-		self.charge      = 0.0
-
-	def resistance(self):
-		return 0.0
-
-	def voltage(self, sourceVertex):
-		return self.direction_sign(sourceVertex) * self.charge / self.capacitance
-
-# fixed potential source
-class Battery(Component):
-	def __init__(self, potential, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self._potential = potential
-
-	def resistance(self):
-		return 0.0
 
 	def voltage(self, sourceVertex):
 		return self.direction_sign(sourceVertex) * self._potential
@@ -109,15 +86,13 @@ class Battery(Component):
 
 class Circuit(UndirectedGraph):
 	def add_resistor(self, v1, v2, resistance):
-		component = Resistor(resistance, (v1,v2))
-		self.add_edge(v1,v2,component=component)
-
-	def add_capacitor(self, v1, v2, capacitance):
-		component = Capacitor(capacitance, (v1,v2))
-		self.add_edge(v1,v2,component=component)
+		self.add_component(v1,v2, resistance=resistance, voltage=0.0)
 
 	def add_battery(self, v1, v2, voltage):
-		component = Battery(voltage, (v1,v2))
+		self.add_component(v1,v2, voltage=voltage, resistance=0.0)
+
+	def add_component(self, v1, v2, *, voltage, resistance):
+		component = Component((v1,v2), voltage=voltage, resistance=resistance)
 		self.add_edge(v1,v2,component=component)
 
 	def edge_component(self, e):
@@ -129,12 +104,13 @@ class Circuit(UndirectedGraph):
 			acc += self.edge_component(e).voltage(source)
 		return acc
 
-	def compute_currents(self):
+	def compute_currents(self, cyclebasis=None):
 
 		# Currents are computed using mesh current analysis;
 		# We only compute a current for each cycle in the cycle basis.
 
-		cyclebasis = self.cycle_basis()
+		if cyclebasis is None:
+			cyclebasis = self.cycle_basis()
 
 		# For each edge, generate a list of (index, sign) for each cycle that crosses it.
 		# This is used to go back and forth between the cycle currents and the individual
@@ -147,10 +123,10 @@ class Circuit(UndirectedGraph):
 				cycles_from_edge[e].append((pathI, sign))
 
 		# Generate voltage vector
-		V = np.array([[self.path_total_voltage(path)] for path in cyclebasis])
+		V = np.array([self.path_total_voltage(path) for path in cyclebasis])
 
 		# Generate resistance matrix
-		R = np.zeros((len(cyclebasis), len(cyclebasis)))
+		R = sparse.lil_matrix((len(cyclebasis),len(cyclebasis)))
 
 		for e in self.edges():
 			component = self.edge_component(e)
@@ -163,7 +139,8 @@ class Circuit(UndirectedGraph):
 					R[row,col] += row_sign * col_sign * resistance
 
 		# Solve linear system
-		cycle_currents = np.linalg.solve(R,V).reshape([len(cyclebasis)])
+		solver = spla.factorized(R.tocsc())
+		cycle_currents = solver(V).reshape([len(cyclebasis)])
 
 		# Build result:  a property map of {edge: current}
 		edge_currents = {}

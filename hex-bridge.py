@@ -1,9 +1,12 @@
 
+import sys
 import math
-
-import circuit
+import argparse
 
 import numpy as np
+import networkx as nx
+
+from resistances_common import *
 
 # (these top two should be flipped x/y)
 # Column numbers: (zigzag dimension)
@@ -35,147 +38,168 @@ import numpy as np
 #  *-*-*-*-*-*-*
 #
 
-class Vertex:
-	def __init__(self, row, col):
-		self._row = row
-		self._col = col
+parser = argparse.ArgumentParser()
+parser.add_argument('rows', metavar='LENGTH', type=int)
+parser.add_argument('cols', metavar='WIDTH', type=int)
+parser.add_argument('--output', '-o', type=str, required=True, help='.gml or .gml.gz output file')
 
-		# object used for hashing and equality testing.
-		# stored as a member in response to profiling tests
-		self._value_tuple = (row, col)
+args = parser.parse_args(sys.argv[1:])
 
-	@property
-	def row(self): return self._row
-	@property
-	def col(self): return self._col
+# Total number of rows/cols of vertices
+def hex_grid_dims(cellrows, cellcols):
+	return (
+		2*cellrows + 1,
+		cellcols + 1,
+	)
 
-	# geometric position of the point on the hexagonal grid that the vertex represents
-	@property
-	def x(self):
-		if self == self.TOP_CONNECTOR: return -4.0
-		elif self == self.BOT_CONNECTOR: return -1.0
-		else:
-			return 0.5 * math.sqrt(3) * self.col
-	@property
-	def y(self):
-		if self in (self.TOP_CONNECTOR, self.BOT_CONNECTOR):
-			return -3.0
-		else:
-			y = 1.5 * self.row # baseline height of row
-			y += 0.5 * ((self.row + self.col + 1) % 2) # adjust every other point for zigzag
-			return y
+def hex_grid_xy_arrays(cellrows, cellcols):
+	nrows,ncols = hex_grid_dims(cellrows, cellcols)
 
-	def __eq__(self, other):
-		return self._value_tuple == other._value_tuple
-	def __hash__(self):
-		return hash(self._value_tuple)
-	def __repr__(self):
-		return 'Vertex({},{})'.format(self.row, self.col)
+	# 2d arrays containing row or column of each node
+	rows = np.outer(range(nrows), [1]*ncols)
+	cols = np.outer([1]*nrows, range(ncols))
 
-# special constants
-Vertex.TOP_CONNECTOR = Vertex(-1,0)
-Vertex.BOT_CONNECTOR = Vertex(-1,1)
+	xs = 0.5 * math.sqrt(3) * cols
 
+	ys = 1.5 * rows # baseline height
+	ys += 0.5 * ((rows + cols + 1) % 2)  # zigzag across row
 
+	return xs, ys
 
-def make_hex_bridge_circuit(cellrows, cellcols):
-	assert cellrows > 0
-	assert cellcols > 0
-	
-	g = circuit.Circuit()
+def grid_label(row,col):
+	return 'grid@{},{}'.format(row,col)
 
-	nrows = 2*(cellcols+1)
-	ncols = cellrows+1
+# a flattened iterator over a (singly-)nested iterable.
+def flat_iter(lst):
+	for item in lst:
+		yield from item
 
-	g.add_vertices(Vertex(row,col) for row in range(nrows) for col in range(ncols))
+# a flattened iterator over the results of calling a function f
+#  (which produces an iterable) on each element of an iterable.
+def flat_map(f, lst):
+	for item in lst:
+		yield from f(item)
 
-	# let's lay some bricks!
+def hex_bridge_grid_circuit(gridvs):
+	g = nx.Graph()
+
+	g.add_nodes_from(flat_iter(gridvs))
+
+	nrows,ncols = np.shape(gridvs)
 
 	# horizontal edges
 	for row in range(nrows):
 		# all the way across
 		for col in range(ncols-1):
-			g.add_resistor(Vertex(row,col), Vertex(row,col+1), 1)
+			add_resistor(g, gridvs[row][col], gridvs[row][col+1], 1.0)
 
 	# vertical edges
 	for row in range(nrows-1):
 		# take every other column (alternating between rows)
 		for col in range(row % 2, ncols, 2):
-			g.add_resistor(Vertex(row+1,col), Vertex(row, col), 1)
-
-	# HACK
-	g.add_vertices([Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR])
-	g.add_battery(Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR, 100.0)
-	for col in range(1,ncols,2):
-		g.add_resistor(Vertex(0,col), Vertex.BOT_CONNECTOR, 1.0)
-	for col in range(nrows%2+1, ncols, 2):
-		g.add_resistor(Vertex(nrows-1,col), Vertex.TOP_CONNECTOR, 1.0)
+			add_resistor(g, gridvs[row+1][col], gridvs[row][col], 1.0)
 
 	return g
 
-g = make_hex_bridge_circuit(10,6)
-#print(g.compute_currents())
+def add_wire(g, s, t):
+	g.add_edge(s, t)
+	g.edge[s][t][EATTR_RESISTANCE] = 0.0
+	g.edge[s][t][EATTR_VOLTAGE]    = 0.0
+	g.edge[s][t][EATTR_SOURCE]     = s
 
+def add_resistor(g, s, t, resistance):
+	add_wire(g,s,t)
+	g.edge[s][t][EATTR_RESISTANCE] = 1.0
 
-def run_trial(nrows, ncols, steps):
-	g = make_hex_bridge_circuit(nrows,ncols)
+def add_battery(g, s, t, voltage):
+	add_wire(g,s,t)
+	g.edge[s][t][EATTR_VOLTAGE] = voltage
 
-	battery = g.arbitrary_edge(Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR)
+def validate_graph_attributes(g):
+	if len(g) == 0: return
+	if g.number_of_edges() == 0: return
 
-	step_currents = []
-	for stepnum in range(steps):
-		step_currents.append(g.compute_currents()[battery])
+	vattr_iter = iter(g.node.values())
+	eattr_iter = flat_map(lambda d: d.values(), g.edge.values())
 
-		r = g.random_vertex()
-		while r in (Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR):
-			r = g.random_vertex()
+	expected_vattr = next(vattr_iter)
+	expected_eattr = next(eattr_iter)
 
-		g.delete_vertices([r])
-	return step_currents
+	for vattr in vattr_iter:
+		diff = set(vattr) ^ set(expected_vattr)
+		if len(diff) != 0:
+			raise RuntimeError('node attributes {} are set on some nodes but not others'.format(diff))
 
-import matplotlib.pyplot as plt
-from matplotlib import collections as mc
+	for eattr in eattr_iter:
+		diff = set(eattr) ^ set(expected_eattr)
+		if len(diff) != 0:
+			raise RuntimeError('edge attributes {} are set on some edges but not others'.format(diff))
 
-def show_trial(nrows, ncols, steps, fitupto):
-	x = range(steps)
+cellrows = args.rows
+cellcols = args.cols
 
-	fig,ax = plt.subplots()
-	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
-	for y in ys:
-		ax.plot(x,y)
-	plt.show()
+nrows,ncols = hex_grid_dims(cellrows,cellcols)
 
-	avg = np.sum(ys,axis=0)/len(ys)
-	fig,ax = plt.subplots()
-	ax.set_aspect('equal')
-	ax.plot(x,avg)
+# Grid nodes
+gridvs = [[grid_label(row,col) for col in range(ncols)] for row in range(nrows)]
 
-	p = np.polyfit(x[:fitupto],avg[:fitupto],1)
-	ax.plot(x,np.polyval(p,x), ':g')
+gridxs, gridys = hex_grid_xy_arrays(cellrows,cellcols)
+xs = {v: x for v,x in zip(flat_iter(gridvs), gridxs.flat)}
+ys = {v: y for v,y in zip(flat_iter(gridvs), gridys.flat)}
 
-	plt.show()
+# Connector nodes
+topv = 'top'
+xs[topv] = -2.0
+ys[topv] = max(gridys.flat) + 1.0
 
-def bench_trial(nrows, ncols, steps):
-	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
+botv = 'bot'
+xs[botv] = -2.0
+ys[botv] = -1.0
 
-def do_visualize(g):
+# Circuit object
+g = hex_bridge_grid_circuit(gridvs)
 
-	xs = np.array([v.x for v in g.vertices()])
-	ys = np.array([v.y for v in g.vertices()])
+g.add_nodes_from([topv, botv])
 
-	lines = []
-	for e in g.edges():
-		u,v = g.edge_endpoints(e)
-		lines.append(((u.x,u.y), (v.x,v.y)))
-	lc = mc.LineCollection(lines, colors='k',linewidths=2)
+# Link top/bot with battery
+add_battery(g, botv, topv, 1.0)
 
-	fig,ax = plt.subplots()
-	ax.set_aspect('equal')
-	ax.scatter(xs,ys,s=25.)
-	ax.add_collection(lc)
-	plt.show()
+#----------------
+# connect top/bot to nodes in graph
+# due to zigzag pattern this is not entirely straightforward
 
-import cProfile
-#show_trial(20,6,steps=100,fitupto=20)
-cProfile.run('bench_trial(10,6,steps=20)',sort='tottime')
-#do_visualize(g)
+# first column for "true" top/bottom rows
+botstart = 1
+topstart = (nrows+1) % 2
+
+# doublecheck
+assert gridys[0][botstart]  < gridys[0][1-botstart]
+assert gridys[-1][topstart] > gridys[-1][1-topstart]
+
+for v in gridvs[0][botstart::2]:
+	add_wire(g,v,botv)
+
+for v in gridvs[-1][topstart::2]:
+	add_wire(g,v,topv)
+
+deletable = {v: True for v in g}
+deletable[topv] = False
+deletable[botv] = False
+
+# remove numpy type information from floats
+xs = {v:float(x) for v,x in xs.items()}
+ys = {v:float(x) for v,x in ys.items()}
+
+nx.set_node_attributes(g, VATTR_X, xs)
+nx.set_node_attributes(g, VATTR_Y, ys)
+nx.set_node_attributes(g, VATTR_REMOVABLE, deletable)
+
+# set edge that will have its current measured
+g.graph[GATTR_MEASURE_SOURCE] = botv
+g.graph[GATTR_MEASURE_TARGET] = topv
+
+validate_graph_attributes(g)
+
+nx.write_gml(g, args.output)
+g2 = nx.read_gml(args.output)
+
