@@ -12,17 +12,16 @@ import numpy as np
 
 from resistances_common import *
 
+import cProfile
+
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
 	parser.add_argument('input', type=str, help='.gml or .gml.gz file')
 	args = parser.parse_args(sys.argv[1:])
 
-	print('Reading {}'.format(args.input))
 	g = read_graph(args.input)
-	print('Done reading')
 
-	import cProfile
 	#show_trial(200,60,steps=100,fitupto=20)
 	#cProfile.run('bench_trial(70,20,steps=20)', sort='tottime')
 	#cProfile.run('bench_old(40,6)',sort='tottime')
@@ -32,11 +31,7 @@ def main():
 	#do_visualize(g)
 
 def read_graph(path):
-	g = nx.read_gml(path)
-
-	# gml-stored graphs use integer labels; retrieve the original labels
-	labelmap = {v:g.node[v][VATTR_LABEL] for v in g}
-	g = nx.relabel_nodes(g, labelmap)
+	g = nx.read_gpickle(path)
 
 	return g
 

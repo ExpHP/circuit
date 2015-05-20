@@ -200,6 +200,5 @@ g.graph[GATTR_MEASURE_TARGET] = topv
 
 validate_graph_attributes(g)
 
-nx.write_gml(g, args.output)
-g2 = nx.read_gml(args.output)
+nx.write_gpickle(g, args.output)
 
