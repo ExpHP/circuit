@@ -48,8 +48,8 @@ args = parser.parse_args(sys.argv[1:])
 # Total number of rows/cols of vertices
 def hex_grid_dims(cellrows, cellcols):
 	return (
-		2*cellrows + 1,
-		cellcols + 1,
+		cellrows + 1,
+		2*cellcols + 1,
 	)
 
 def hex_grid_xy_arrays(cellrows, cellcols):
