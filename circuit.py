@@ -125,18 +125,24 @@ class Circuit(UndirectedGraph):
 		# Generate voltage vector
 		V = np.array([self.path_total_voltage(path) for path in cyclebasis])
 
-		# Generate resistance matrix
-		R = sparse.lil_matrix((len(cyclebasis),len(cyclebasis)))
-
+		# Build components of resistance matrix, in coo (COOrdinate format) sparse format
+		R_vals = []
+		R_rows = []
+		R_cols = []
 		for e in self.edges():
 			component = self.edge_component(e)
 			resistance = component.resistance()
+			ecycles = cycles_from_edge[e]
 
-			# Multiplying the signs gives +1 between cycles crossing this edge in the
-			#  same direction, and -1 between cycles crossing in reverse directions.
-			for (row, row_sign) in cycles_from_edge[e]:
-				for (col, col_sign) in cycles_from_edge[e]:
-					R[row,col] += row_sign * col_sign * resistance
+			# generate terms corresponding to this edge, which are +r between cycles that cross the
+			#  edge in the same direction, and -r between cycles that cross in opposite directions
+			for (row, row_sign) in ecycles:
+				R_rows.extend([row]*len(ecycles))
+				R_cols.extend([col for (col,_) in ecycles])
+				R_vals.extend([row_sign * col_sign * resistance for (_,col_sign) in ecycles])
+				assert len(R_vals) == len(R_rows) == len(R_cols)
+
+		R = sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
 
 		# Solve linear system
 		solver = spla.factorized(R.tocsc())
