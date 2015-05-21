@@ -77,6 +77,9 @@ def minimal_cycle_basis_impl(g):
 		# Check edges in ccw order from the +x axis
 		for target in sorted(g[root], key=lambda t: edge_angle(g,root,t) % (2*math.pi)):
 
+			if not g.has_edge(root, target):
+				continue
+
 			if g.edge[root][target]['state'] is EdgeState.DELETED:
 				continue
 
@@ -147,6 +150,18 @@ def mark_cycle_edges(g, path):
 
 	root, second = path[:2]
 	g.edge[root][second]['state'] = EdgeState.DELETED
+
+	for prev, cur in window2(path):
+		if g.has_edge(prev,cur) and g.edge[prev][cur]['state'] is EdgeState.DELETED:
+			delete_edge_and_filaments(g,prev,cur)
+
+def delete_edge_and_filaments(g,s,t):
+	g.remove_edge(s,t)
+	for v in (s,t):
+		while g.degree(v) == 1:
+			neighbor = next(iter(g.edge[v]))
+			g.remove_edge(v, neighbor)
+			v = neighbor
 
 # A scrolling 2-element window on an iterator
 def window2(it):
