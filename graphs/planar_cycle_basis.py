@@ -53,10 +53,6 @@ def minimal_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
 
-	nx.set_edge_attributes(g, 'used_once', {e: False for e in g.edges()})
-
-	cycles = []
-
 	# "First" nodes/edges for each cycle are chosen in an order such that the first edge
 	#  may never belong to a later cycle.
 
@@ -65,21 +61,31 @@ def minimal_cycle_basis_impl(g):
 
 	# NOTE: may want to verify that no ties exist after the rotation
 
+	nx.set_edge_attributes(g, 'used_once', {e: False for e in g.edges()})
+
+	# precompute edge angles
+	angles = {}
+	for s,t in g.edges():
+		angles[s,t] = edge_angle(g,s,t) % (2*math.pi)
+		angles[t,s] = (angles[s,t] + math.pi) % (2*math.pi)
+
 	# identify and clear away edges which cannot belong to cycles
 	for v in g:
 		if degree(g,v) == 1:
 			g.remove_filament(v)
 
+	cycles = []
+
 	# sort ascendingly by y
 	for root in sorted(g, key = lambda v: g.node[v]['y']):
 
 		# Check edges in ccw order from the +x axis
-		for target in sorted(g[root], key=lambda t: edge_angle(g,root,t) % (2*math.pi)):
+		for target in sorted(g[root], key=lambda t: angles[root,t]):
 
 			if not g.has_edge(root, target):
 				continue
 
-			path = maybe_complete_cw_cycle(g, root, target)
+			path = maybe_complete_cw_cycle(g, root, target, angles)
 			if path is None:
 				continue
 
@@ -106,12 +112,12 @@ def rotate_graph(g, angle):
 	nx.set_node_attributes(g, 'x', xs)
 	nx.set_node_attributes(g, 'y', ys)
 
-def maybe_complete_cw_cycle(g, vfirst, vsecond):
+def maybe_complete_cw_cycle(g, vfirst, vsecond, angles):
 	prev, cur = vfirst, vsecond
 	path = [vfirst, vsecond]
 
 	def interior_angle_cw(v1, v2, v3):
-		return (edge_angle(g, v2, v1) - edge_angle(g, v2, v3)) % (2*math.pi)
+		return (angles[v2,v1] - angles[v2,v3]) % (2*math.pi)
 
 	def bad_edge(v1, v2):
 		return (
