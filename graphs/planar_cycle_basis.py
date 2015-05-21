@@ -115,15 +115,13 @@ def rotate_graph(g, angle):
 def maybe_complete_cw_cycle(g, vfirst, vsecond, angles):
 	prev, cur = vfirst, vsecond
 	path = [vfirst, vsecond]
+	forbidden = set([vsecond]) # non-root path nodes (which may not be revisited)
 
 	def interior_angle_cw(v1, v2, v3):
 		return (angles[v2,v1] - angles[v2,v3]) % (2*math.pi)
 
 	def bad_edge(v1, v2):
-		return (
-			(v2 == path[-2]) # this is not redundant (think lists of length 2)
-			or (v2 in path[1:])
-		)
+		return v2 == path[-2] or v2 in forbidden
 
 	while cur != vfirst:
 		neighbor_it = iter(sorted(g[cur], key = lambda t: interior_angle_cw(prev, cur, t)))
@@ -138,6 +136,7 @@ def maybe_complete_cw_cycle(g, vfirst, vsecond, angles):
 		cur = target
 
 		path.append(target)
+		forbidden.add(target)
 		assert g.has_edge(path[-2],path[-1])
 
 	assert path[0] == path[-1]
