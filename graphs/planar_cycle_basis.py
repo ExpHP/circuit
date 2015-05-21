@@ -67,7 +67,7 @@ def minimal_cycle_basis_impl(g):
 
 	# identify and clear away edges which cannot belong to cycles
 	for v in g:
-		if g.degree(v) == 1:
+		if degree(g,v) == 1:
 			g.remove_filament(v)
 
 	# sort ascendingly by y
@@ -88,6 +88,10 @@ def minimal_cycle_basis_impl(g):
 			cycles.append(path)
 
 	return cycles
+
+# g.degree is a tad slow
+def degree(g, v):
+	return len(g.edge[v])
 
 def rotate_graph(g, angle):
 	xs = nx.get_node_attributes(g, 'x')
@@ -147,13 +151,13 @@ def remove_cycle_edges(g, path):
 
 	# clear away any filaments left behind
 	for v in path:
-		if g.degree(v) == 1:
+		if degree(g,v) == 1:
 			remove_filament(g,v)
 
 # deletes an orphaned chain of edges, given the vertex at its end
 def remove_filament(g,v):
-	assert g.degree(v) == 1
-	while g.degree(v) == 1:
+	assert degree(g,v) == 1
+	while degree(g,v) == 1:
 		neighbor = next(iter(g.edge[v]))
 		g.remove_edge(v, neighbor)
 		v = neighbor
