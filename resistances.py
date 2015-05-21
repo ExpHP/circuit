@@ -63,8 +63,8 @@ def other_endpoint(e, s):
 def circuit_from_nx(g):
 	circuit = Circuit()
 	circuit.add_vertices(iter(g))
-	for v1 in g:
-		for v2,eattr in g.edge[v1].items():
+	for (v1,v2) in g.edges():
+			eattr = g.edge[v1][v2]
 			s = eattr[EATTR_SOURCE]
 			t = other_endpoint((v1,v2), s)
 
@@ -189,6 +189,9 @@ def bench_old(g):
 	print('basis edges: {}'.format(sum(len(p) for p in cyclebasis)))
 
 	circuit.compute_currents(cyclebasis=cyclebasis)
+
+#nx.draw_networkx(g, pos={v:(xs[v],ys[v]) for v in g})
+#plt.show()
 
 #def do_visualize(g, vxs, vys):
 
