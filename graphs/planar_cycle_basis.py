@@ -38,12 +38,6 @@ def minimal_cycle_basis_nx(g, xs, ys):
 	return minimal_cycle_basis_impl(my_g)
 
 
-@enum.unique
-class EdgeState(enum.Enum):
-	UNUSED    = 0 # an edge part of no cycles
-	USED_ONCE = 1 # an edge part of only one cycle
-	DELETED   = 2 # an edge which may not belong to any more cycles
-
 def edge_angle(g, s, t):
 	s_attr, t_attr = g.node[s], g.node[t]
 	return math.atan2(t_attr['y']-s_attr['y'], t_attr['x']-s_attr['x'])
@@ -59,7 +53,7 @@ def minimal_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
 
-	nx.set_edge_attributes(g, 'state', {e: EdgeState.UNUSED for e in g.edges()})
+	nx.set_edge_attributes(g, 'used_once', {e: False for e in g.edges()})
 
 	cycles = []
 
@@ -71,6 +65,11 @@ def minimal_cycle_basis_impl(g):
 
 	# NOTE: may want to verify that no ties exist after the rotation
 
+	# identify and clear away edges which cannot belong to cycles
+	for v in g:
+		if g.degree(v) == 1:
+			g.remove_filament(v)
+
 	# sort ascendingly by y
 	for root in sorted(g, key = lambda v: g.node[v]['y']):
 
@@ -80,14 +79,11 @@ def minimal_cycle_basis_impl(g):
 			if not g.has_edge(root, target):
 				continue
 
-			if g.edge[root][target]['state'] is EdgeState.DELETED:
-				continue
-
 			path = maybe_complete_cw_cycle(g, root, target)
 			if path is None:
 				continue
 
-			mark_cycle_edges(g, path)
+			remove_cycle_edges(g, path)
 
 			cycles.append(path)
 
@@ -110,15 +106,12 @@ def maybe_complete_cw_cycle(g, vfirst, vsecond):
 	prev, cur = vfirst, vsecond
 	path = [vfirst, vsecond]
 
-	assert g.edge[path[-2]][path[-1]]['state'] is not EdgeState.DELETED
-
 	def interior_angle_cw(v1, v2, v3):
 		return (edge_angle(g, v2, v1) - edge_angle(g, v2, v3)) % (2*math.pi)
 
 	def bad_edge(v1, v2):
 		return (
-			(g.edge[v1][v2]['state'] is EdgeState.DELETED)
-			or (v2 == path[-2]) # this is not redundant (think lists of length 2)
+			(v2 == path[-2]) # this is not redundant (think lists of length 2)
 			or (v2 in path[1:])
 		)
 
@@ -135,33 +128,35 @@ def maybe_complete_cw_cycle(g, vfirst, vsecond):
 		cur = target
 
 		path.append(target)
-		assert g.edge[path[-2]][path[-1]]['state'] is not EdgeState.DELETED
+		assert g.has_edge(path[-2],path[-1])
 
 	assert path[0] == path[-1]
 	return path
 
-def mark_cycle_edges(g, path):
+def remove_cycle_edges(g, path):
 	assert len(path) == len(set(path)) + 1
+
+	# delete any edge belonging to two cycles
 	for prev, cur in window2(path):
-		edict = g.edge[prev][cur]
-		if   edict['state'] is EdgeState.UNUSED:    edict['state'] = EdgeState.USED_ONCE
-		elif edict['state'] is EdgeState.USED_ONCE: edict['state'] = EdgeState.DELETED
-		elif edict['state'] is EdgeState.DELETED:   assert False
+		if g.edge[prev][cur]['used_once']: g.remove_edge(prev,cur)
+		else: g.edge[prev][cur]['used_once'] = True
 
-	root, second = path[:2]
-	g.edge[root][second]['state'] = EdgeState.DELETED
+	# always delete first edge of cycle
+	if g.has_edge(path[0], path[1]):
+		g.remove_edge(path[0], path[1])
 
-	for prev, cur in window2(path):
-		if g.has_edge(prev,cur) and g.edge[prev][cur]['state'] is EdgeState.DELETED:
-			delete_edge_and_filaments(g,prev,cur)
+	# clear away any filaments left behind
+	for v in path:
+		if g.degree(v) == 1:
+			remove_filament(g,v)
 
-def delete_edge_and_filaments(g,s,t):
-	g.remove_edge(s,t)
-	for v in (s,t):
-		while g.degree(v) == 1:
-			neighbor = next(iter(g.edge[v]))
-			g.remove_edge(v, neighbor)
-			v = neighbor
+# deletes an orphaned chain of edges, given the vertex at its end
+def remove_filament(g,v):
+	assert g.degree(v) == 1
+	while g.degree(v) == 1:
+		neighbor = next(iter(g.edge[v]))
+		g.remove_edge(v, neighbor)
+		v = neighbor
 
 # A scrolling 2-element window on an iterator
 def window2(it):
