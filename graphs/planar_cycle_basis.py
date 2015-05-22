@@ -72,7 +72,7 @@ def minimal_cycle_basis_impl(g):
 	# identify and clear away edges which cannot belong to cycles
 	for v in g:
 		if degree(g,v) == 1:
-			g.remove_filament(v)
+			remove_filament(g, v)
 
 	cycles = []
 
