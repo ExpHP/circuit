@@ -54,23 +54,26 @@ def run_trial_nx(steps, g, *, verbose=False):
 	if verbose:
 		print('Starting')
 
-	deletable = set(v for v in g if g.node[v][VATTR_REMOVABLE])
+	initial_g = g.copy()
 
 	step_current = []
-
 	for step in range(steps):
 		t = time.time()
 
+		# the big heavy calculation!
 		step_current.append(compute_current_planar_nx(g))
 
-		r = pick.uniform(deletable)
-		deletable.remove(r)
-		g.remove_node(r)
+		# delete some nodes
+		deleted = get_nodes_to_delete(g, initial_g)
+		remove_nodes_from(g, deleted)
 
 		if verbose:
 			print('step: ', step, 'time: ', time.time() - t)
 
 	return step_current
+
+def get_nodes_to_delete(g, initial_g):
+	return [pick.uniform(get_deletable_nodes(g))]
 
 def compute_current_planar_nx(g):
 	circuit = circuit_from_nx(g)
@@ -100,13 +103,24 @@ def read_graph(path):
 	g = nx.read_gpickle(path)
 	return g
 
+def get_deletable_nodes(g):
+	return set(v for v in g if g.node[v][VATTR_REMOVABLE])
+
+# Prefer g.remove_node over g.remove_nodes_from.
+# (the latter silently ignores invalid nodes, which is a problem
+#  on the off-chance that it is accidentally supplied with a
+#  node of an iterable type (i.e. string) instead of a list)
+def remove_nodes_from(g, nodes):
+	for v in nodes:
+		g.remove_node(v)
+
 def circuit_from_nx(g):
 	circuit = Circuit()
 	circuit.add_vertices(iter(g))
 	for (v1,v2) in g.edges():
 			eattr = g.edge[v1][v2]
 			s = eattr[EATTR_SOURCE]
-			t = other_endpoint((v1,v2), s)
+			t = other_endpoint_nx((v1,v2), s)
 
 			circuit.add_component(s, t,
 				resistance = eattr[EATTR_RESISTANCE],
@@ -114,18 +128,18 @@ def circuit_from_nx(g):
 			)
 	return circuit
 
-def other_endpoint(e, s):
+def other_endpoint_nx(e, s):
 	(v1,v2) = e
 	if s == v1: return v2
 	elif s == v2: return v1
 	else:
 		raise ValueError('{} is not an endpoint of the edge ({},{})'.format(s,v1,v2))
 
-def to_edge_path(g, vertex_path):
+def to_edge_path(circuit, vertex_path):
 	# HACK should be SingleGraph.get_edge instead of BaseGraph.get_arbitrary_edge
 	#     but I haven't implemented the former class yet
 	# or better yet just get rid of my silly pointless incomplete graph library >_>
-	return [g.arbitrary_edge(u,v) for (u,v) in window2(vertex_path)]
+	return [circuit.arbitrary_edge(u,v) for (u,v) in window2(vertex_path)]
 
 # A scrolling 2-element window on an iterator
 def window2(it):
