@@ -2,14 +2,17 @@
 import sys
 import math
 import random
+import time
+
 
 import networkx as nx
+import numpy as np
+
+from multiprocessing import Pool
+import multiprocessing_dill
 
 from circuit import Circuit
 from graphs.planar_cycle_basis import minimal_cycle_basis as planar_cycle_basis
-
-import numpy as np
-
 from resistances_common import *
 
 import cProfile
@@ -17,18 +20,27 @@ import cProfile
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
-	parser.add_argument('input', type=str, help='.gml or .gml.gz file')
+	parser.add_argument('input',   type=str, help='.gml or .gml.gz file')
+	parser.add_argument('--verbose', '-v', action='store_true')
+	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
+	parser.add_argument('--num-trials', '-n', type=int, default=10, help='number of trials to do total')
 	args = parser.parse_args(sys.argv[1:])
 
-	g = read_graph(args.input)
+	f = lambda : run_trial_fpath(20, args.input, verbose=args.verbose)
+	print(run_parallel(f, threads=args.jobs, times=args.num_trials))
+	#g = read_graph(args.input)
 
 	#show_trial(200,60,steps=100,fitupto=20)
 	#cProfile.run('bench_trial(70,20,steps=20)', sort='tottime')
 	#cProfile.run('bench_old(40,6)',sort='tottime')
-	cProfile.runctx('bench_new(g)', globals(), locals(), sort='cumtime')
-#	bench_new(g)
 	#compare(10,5)
 	#do_visualize(g)
+
+def simple_profile(n,f,*args,**kwargs):
+	for i in range(10):
+		t = time.time()
+		f(*args, **kwargs)
+		print(i, time.time() - t)
 
 def read_graph(path):
 	g = nx.read_gpickle(path)
@@ -74,53 +86,65 @@ def circuit_from_nx(g):
 			)
 	return circuit
 
-def trial_inputs(g):
+def compute_current_planar_nx(g):
 	circuit = circuit_from_nx(g)
 
 	xs = {v:g.node[v]['x'] for v in g}
 	ys = {v:g.node[v]['y'] for v in g}
 
-	deletable = set(v for v in g if g.node[v][VATTR_REMOVABLE])
-
 	measure_s = g.graph[GATTR_MEASURE_SOURCE]
 	measure_t = g.graph[GATTR_MEASURE_TARGET]
 
-	assert measure_s not in deletable
-	assert measure_t not in deletable
-
 	measure_e = circuit.arbitrary_edge(measure_s, measure_t)
 
-	return circuit, measure_e, deletable, xs, ys
+	return compute_current_planar(circuit, measure_e, xs, ys)
 
-def run_trial(circuit, measured_edge, deletable_vs, xs, ys):
+def compute_current_planar(circuit, measured_edge, xs, ys):
 
-	step_currents = []
-	for stepnum in range(steps):
+	es = {e: circuit.edge_endpoints(e) for e in circuit.edges()}
+	vertex_cyclebasis = planar_cycle_basis(circuit.vertices(), es, xs, ys)
+	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
 
-		# take advantage of planar representation to get
-		#  a MINIMUM cycle basis
-		es = {e: circuit.edge_endpoints(e) for e in circuit.edges()}
-		vertex_cyclebasis = planar_cycle_basis(circuit.vertices(), es, xs, ys)
+	return circuit.compute_currents(edge_cyclebasis)[measured_edge]
 
-		edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
+# Runs a nullary function the specified number of times and collects the results into an array.
+# Each process will be given a unique random seed
+def run_parallel(f,*,threads,times):
 
-		currents = circuit.compute_currents(edge_cyclebasis)
+	baseseed = time.time()
+	seeds = [baseseed + i for i in range(times)]
 
-		step_currents.append(currents[measured_edge])
+	def run_with_seed(seed):
+		random.seed(seed)
+		return f()
 
-#		r = g.random_vertex()
-#		while r in (Vertex.TOP_CONNECTOR, Vertex.BOT_CONNECTOR):
-#			r = g.random_vertex()
-		r = random.choice(list(deletable_vs))
-		deletable_vs.remove(r)
-		circuit.delete_vertices([r])
+	p = Pool(threads)
+	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-		# hack
-		del xs[r]
-		del ys[r]
+def run_trial_fpath(steps, path, *, verbose=False):
+	return run_trial_nx(steps, read_graph(path), verbose=verbose)
 
-#		g.delete_vertices([r])
-	return step_currents
+def run_trial_nx(steps, g, *, verbose=False):
+	if verbose:
+		print('Starting')
+
+	deletable = set(v for v in g if g.node[v][VATTR_REMOVABLE])
+
+	step_current = []
+
+	for step in range(steps):
+		t = time.time()
+
+		step_current.append(compute_current_planar_nx(g))
+
+		r = random.choice(list(deletable))
+		deletable.remove(r)
+		g.remove_node(r)
+
+		if verbose:
+			print('step: ', step, 'time: ', time.time() - t)
+
+	return step_current
 
 def show_trial(nrows, ncols, steps, fitupto):
 
@@ -128,15 +152,6 @@ def show_trial(nrows, ncols, steps, fitupto):
 
 	fig,ax = plt.subplots()
 	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
-
-	# get resistances
-	#for i,y in enumerate(ys):
-	#	for j in range(len(y)):
-	#		try:
-	#			y[j] = 1./y[j]
-	#		except Exception:
-	#			break
-	#	ys[i] = y
 
 	for y in ys:
 		ax.plot(x,y)
@@ -152,63 +167,8 @@ def show_trial(nrows, ncols, steps, fitupto):
 
 	plt.show()
 
-def bench_trial(nrows, ncols, steps):
-	ys = [run_trial(nrows, ncols, steps) for _ in range(10)]
-
-def compare(g):
-	circuit, measured_edge, deletable_vs, xs, ys = trial_inputs(g)
-
-	es = {e: circuit.edge_endpoints(e) for e in circuit.edges()}
-	vertex_cyclebasis = planar_cycle_basis(circuit.vertices(), es, xs, ys)
-	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
-
-	currents_old = circuit.compute_currents(circuit.cyclebasis())
-	currents_new = circuit.compute_currents(edge_cyclebasis)
-
-	print('old',currents_old[measure_edge])
-	print('new',currents_new[measure_edge])
-
-def bench_new(g):
-	circuit, measured_edge, deletable_vs, xs, ys = trial_inputs(g)
-
-	es = {e: circuit.edge_endpoints(e) for e in circuit.edges()}
-	vertex_cyclebasis = planar_cycle_basis(circuit.vertices(), es, xs, ys)
-	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
-
-	print('basis size: {}'.format(len(edge_cyclebasis)))
-	print('basis edges: {}'.format(sum(len(p) for p in edge_cyclebasis)))
-
-	circuit.compute_currents(edge_cyclebasis)
-
-def bench_old(g):
-	circuit, measured_edge, deletable_vs, xs, ys = trial_inputs(g)
-
-	cyclebasis = g.cycle_basis()
-
-	print('basis size: {}'.format(len(cyclebasis)))
-	print('basis edges: {}'.format(sum(len(p) for p in cyclebasis)))
-
-	circuit.compute_currents(cyclebasis=cyclebasis)
-
 #nx.draw_networkx(g, pos={v:(xs[v],ys[v]) for v in g})
 #plt.show()
-
-#def do_visualize(g, vxs, vys):
-
-	#xs = np.array([vxs[v] for v in g.vertices()])
-	#ys = np.array([vys[v] for v in g.vertices()])
-
-	#lines = []
-	#for e in g.edges():
-		#u,v = g.edge_endpoints(e)
-		#lines.append(((vxs[u],vys[u]), (vxs[v],vys[v])))
-	#lc = mc.LineCollection(lines, colors='k',linewidths=2)
-
-	#fig,ax = plt.subplots()
-	#ax.set_aspect('equal')
-	#ax.scatter(xs,ys,s=25.)
-	#ax.add_collection(lc)
-	#plt.show()
 
 if __name__ == '__main__':
 	main()
