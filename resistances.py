@@ -3,6 +3,10 @@ import sys
 import math
 import random
 import time
+try:
+	import cProfile as profile
+except ImportError:
+	import profile
 
 
 import networkx as nx
@@ -15,7 +19,8 @@ from circuit import Circuit
 from graphs.planar_cycle_basis import minimal_cycle_basis as planar_cycle_basis
 from resistances_common import *
 
-import cProfile
+import pick
+
 
 def main():
 	import argparse
@@ -137,7 +142,7 @@ def run_trial_nx(steps, g, *, verbose=False):
 
 		step_current.append(compute_current_planar_nx(g))
 
-		r = random.choice(list(deletable))
+		r = pick.uniform(deletable)
 		deletable.remove(r)
 		g.remove_node(r)
 
