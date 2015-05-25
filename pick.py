@@ -64,7 +64,7 @@ def weighted(it, weights, rng=random):
 
 	r = rng.random() * cum_weights[-1]
 	i = bisect_left(cum_weights, r)
-	assert weight[i] != 0
+	assert weights[i] != 0
 	return items[i]
 
 def prefix_sums(xs):

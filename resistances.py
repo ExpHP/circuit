@@ -15,7 +15,7 @@ from multiprocessing import Pool
 import multiprocessing_dill
 
 from circuit import Circuit
-from graphs.planar_cycle_basis import minimal_cycle_basis as planar_cycle_basis
+from graphs.planar_cycle_basis import planar_cycle_basis
 from resistances_common import *
 
 import pick
@@ -28,10 +28,33 @@ def main():
 	parser.add_argument('--verbose', '-v', action='store_true')
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
 	parser.add_argument('--num-trials', '-n', type=int, default=10, help='number of trials to do total')
+	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
 	args = parser.parse_args(sys.argv[1:])
 
-	f = lambda : run_trial_fpath(20, args.input, verbose=args.verbose)
+	f = lambda : run_trial_fpath(
+		steps = args.steps,
+		path = args.input,
+		selection_func = selection_funcs.near_deleted,
+		verbose = args.verbose
+	)
 	print(run_parallel(f, threads=args.jobs, times=args.num_trials))
+
+#	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
+#	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
+
+class selection_funcs:
+	@staticmethod
+	def uniform(g, initial_g):
+		return [pick.uniform(get_deletable_nodes(g))]
+
+	@staticmethod
+	def near_deleted(g, initial_g):
+		max_nbrs = initial_g.degree()
+		cur_nbrs = g.degree(get_deletable_nodes(g))
+		missing_nbrs = {v: max_nbrs[v] - cur_nbrs[v] for v in cur_nbrs}
+
+		weightfunc = [1,10**3,10**4,10**7].__getitem__
+		return [pick.weighted(missing_nbrs, map(weightfunc, missing_nbrs.values()))]
 
 # Runs a nullary function the specified number of times and collects the results into an array.
 # Each process will be given a unique random seed
@@ -47,10 +70,10 @@ def run_parallel(f,*,threads,times):
 	p = Pool(threads)
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-def run_trial_fpath(steps, path, *, verbose=False):
-	return run_trial_nx(steps, read_graph(path), verbose=verbose)
+def run_trial_fpath(steps, path, selection_func, *, verbose=False):
+	return run_trial_nx(steps, read_graph(path), selection_func, verbose=verbose)
 
-def run_trial_nx(steps, g, *, verbose=False):
+def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	if verbose:
 		print('Starting')
 
@@ -64,7 +87,7 @@ def run_trial_nx(steps, g, *, verbose=False):
 		step_current.append(compute_current_planar_nx(g))
 
 		# delete some nodes
-		deleted = get_nodes_to_delete(g, initial_g)
+		deleted = selection_func(g, initial_g)
 		remove_nodes_from(g, deleted)
 
 		if verbose:
@@ -72,8 +95,27 @@ def run_trial_nx(steps, g, *, verbose=False):
 
 	return step_current
 
-def get_nodes_to_delete(g, initial_g):
-	return [pick.uniform(get_deletable_nodes(g))]
+def visualize_selection_func(g, selection_func, nsteps):
+	initial_g = g.copy()
+	for _ in range(nsteps):
+		deleted = selection_func(g, initial_g)
+		remove_nodes_from(g, deleted)
+
+	import matplotlib.pyplot as plt
+	from functools import partial
+
+	fig, ax = plt.subplots()
+	ax.set_aspect('equal')
+	xs = nx.get_node_attributes(initial_g, 'x')
+	ys = nx.get_node_attributes(initial_g, 'y')
+	pos={v:(xs[v],ys[v]) for v in initial_g}
+
+	draw = partial(nx.draw_networkx, g, pos, False, ax=ax, node_size=50)
+	draw(edgelist=initial_g.edges(), nodelist=[])
+	draw(edgelist=[], nodelist=set(initial_g)-set(g), node_color='r')
+	draw(edgelist=[], nodelist=set(g), node_color='g')
+
+	plt.show()
 
 def compute_current_planar_nx(g):
 	circuit = circuit_from_nx(g)
@@ -94,10 +136,6 @@ def compute_current_planar(circuit, measured_edge, xs, ys):
 	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
 
 	return circuit.compute_currents(edge_cyclebasis)[measured_edge]
-
-# note: visualizing nx graphs
-#nx.draw_networkx(g, pos={v:(xs[v],ys[v]) for v in g})
-#plt.show()
 
 def read_graph(path):
 	g = nx.read_gpickle(path)

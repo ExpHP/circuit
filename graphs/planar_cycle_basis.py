@@ -10,16 +10,16 @@ import networkx as nx
 # es:   {E: (V, V)}
 # v_xs: {V: float}
 # v_ys: {V: float}
-def minimal_cycle_basis(vs, es, v_xs, v_ys):
+def planar_cycle_basis(vs, es, v_xs, v_ys):
 	my_g = nx.Graph()
 	my_g.add_nodes_from(vs)
 	my_g.add_edges_from(es.values())
 	nx.set_node_attributes(my_g, 'x', v_xs)
 	nx.set_node_attributes(my_g, 'y', v_ys)
 
-	return minimal_cycle_basis_impl(my_g)
+	return planar_cycle_basis_impl(my_g)
 
-def minimal_cycle_basis_nx(g, xs, ys):
+def planar_cycle_basis_nx(g, xs, ys):
 	if g.is_directed():
 		raise TypeError('Not implemented for directed graphs')
 	if g.is_multigraph():
@@ -35,7 +35,7 @@ def minimal_cycle_basis_nx(g, xs, ys):
 	nx.set_node_attributes(my_g, 'x', xs)
 	nx.set_node_attributes(my_g, 'y', ys)
 
-	return minimal_cycle_basis_impl(my_g)
+	return planar_cycle_basis_impl(my_g)
 
 
 def edge_angle(g, s, t):
@@ -49,7 +49,7 @@ def edge_angle(g, s, t):
 #    y
 #  edge props:
 #    ...
-def minimal_cycle_basis_impl(g):
+def planar_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
 
