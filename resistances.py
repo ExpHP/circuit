@@ -10,6 +10,7 @@ except ImportError:
 
 import networkx as nx
 import numpy as np
+import json
 
 from multiprocessing import Pool
 import multiprocessing_dill
@@ -20,15 +21,15 @@ from resistances_common import *
 
 import pick
 
-
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
-	parser.add_argument('input',   type=str, help='.gml or .gml.gz file')
+	parser.add_argument('input', type=str, help='.pickle file of networkx graph')
 	parser.add_argument('--verbose', '-v', action='store_true')
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
-	parser.add_argument('--num-trials', '-n', type=int, default=10, help='number of trials to do total')
+	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
+	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
 	args = parser.parse_args(sys.argv[1:])
 
 	f = lambda : run_trial_fpath(
@@ -37,7 +38,19 @@ def main():
 		selection_func = selection_funcs.near_deleted,
 		verbose = args.verbose
 	)
-	print(run_parallel(f, threads=args.jobs, times=args.num_trials))
+
+	info = {}
+
+	info['process_count'] = args.jobs
+
+	info['time_started'] = int(time.time())
+	info['trials'] = run_parallel(f, threads=args.jobs, times=args.trials)
+	info['time_finished'] = int(time.time())
+
+	if args.output_json is not None:
+		s = json.dumps(info)
+		with open(args.output_json, 'w') as f:
+			f.write(s)
 
 #	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
 #	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
@@ -71,7 +84,9 @@ def run_parallel(f,*,threads,times):
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
 def run_trial_fpath(steps, path, selection_func, *, verbose=False):
-	return run_trial_nx(steps, read_graph(path), selection_func, verbose=verbose)
+	trial_info = run_trial_nx(steps, read_graph(path), selection_func, verbose=verbose)
+	trial_info['filepath'] = path
+	return trial_info
 
 def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	if verbose:
@@ -79,21 +94,32 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 
 	initial_g = g.copy()
 
-	step_current = []
+	trial_info = {
+		'graph': graph_info_nx(g),
+		'steps': {'runtime':[], 'current':[], 'deleted':[]},
+	}
+
+	step_info = trial_info['steps']
 	for step in range(steps):
 		t = time.time()
 
 		# the big heavy calculation!
-		step_current.append(compute_current_planar_nx(g))
+		current = compute_current_planar_nx(g)
 
 		# delete some nodes
 		deleted = selection_func(g, initial_g)
 		remove_nodes_from(g, deleted)
 
-		if verbose:
-			print('step: ', step, 'time: ', time.time() - t)
+		runtime = time.time() - t
 
-	return step_current
+		step_info['runtime'].append(runtime)
+		step_info['current'].append(current)
+		step_info['deleted'].append(list(deleted))
+
+		if verbose:
+			print('step:', step, 'time:', runtime, 'current:', current)
+
+	return trial_info
 
 def visualize_selection_func(g, selection_func, nsteps):
 	initial_g = g.copy()
@@ -151,6 +177,18 @@ def get_deletable_nodes(g):
 def remove_nodes_from(g, nodes):
 	for v in nodes:
 		g.remove_node(v)
+
+def graph_info_circuit(circuit):
+	return {
+		'num_vertices': circuit.num_vertices(),
+		'num_edges':    circuit.num_edges(),
+	}
+
+def graph_info_nx(g):
+	return {
+		'num_vertices': g.number_of_nodes(),
+		'num_edges':    g.number_of_edges(),
+	}
 
 def circuit_from_nx(g):
 	circuit = Circuit()
