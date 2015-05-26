@@ -19,9 +19,14 @@ from circuit import Circuit
 from graphs.planar_cycle_basis import planar_cycle_basis
 from resistances_common import *
 
+import logging
+import multiprocess_logging
+
 import node_selection
 
 def main():
+	logging.basicConfig(filename='resistances.log',level=logging.DEBUG)
+
 	import argparse
 	parser = argparse.ArgumentParser()
 	parser.add_argument('input', type=str, help='.pickle file of networkx graph')
@@ -50,7 +55,7 @@ def main():
 	info['process_count'] = args.jobs
 
 	info['time_started'] = int(time.time())
-	info['trials'] = run_parallel(f, threads=args.jobs, times=args.trials)
+	info['trials'] = run_parallel(f, nprocs=args.jobs, times=args.trials)
 	info['time_finished'] = int(time.time())
 
 	if args.output_json is not None:
@@ -62,18 +67,19 @@ def main():
 #	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
 
 # Runs a nullary function the specified number of times and collects the results into an array.
-# Each process will be given a unique random seed
-def run_parallel(f,*,threads,times):
+# Each process will be given a unique random seed and logger
+def run_parallel(f,*,nprocs,times):
 
 	baseseed = time.time()
-	seeds = [baseseed + i for i in range(times)]
 
-	def run_with_seed(seed):
-		random.seed(seed)
+	def run_with_job_id(job):
+		multiprocess_logging.set_job_suffix('job{}'.format(str(job)))
+
+		random.seed(baseseed + job)
 		return f()
 
-	p = Pool(threads)
-	return multiprocessing_dill.map(p, run_with_seed, seeds)
+	p = Pool(nprocs)
+	return multiprocessing_dill.map(p, run_with_job_id, range(times))
 
 def run_trial_fpath(steps, path, selection_func, *, verbose=False):
 	trial_info = run_trial_nx(steps, read_graph(path), selection_func, verbose=verbose)
@@ -86,6 +92,8 @@ def run_trial_fpath(steps, path, selection_func, *, verbose=False):
 def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	if verbose:
 		print('Starting')
+
+	logger = multiprocess_logging.getLogger() # XXX
 
 	initial_g = g.copy()
 
@@ -100,8 +108,12 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	for step in range(steps):
 		t = time.time()
 
+		logger.debug('BEGIN STEP %s', step) # XXX
+
 		# the big heavy calculation!
 		current = compute_current_planar_nx(g)
+
+		logger.debug('current: %s', current) # XXX
 
 		# delete a node
 		deleted = selection_func(choices, g, initial_g)
@@ -109,6 +121,8 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		g.remove_node(deleted)
 
 		runtime = time.time() - t
+
+		logger.debug('runtime: %s', runtime) # XXX
 
 		step_info['runtime'].append(runtime)
 		step_info['current'].append(current)

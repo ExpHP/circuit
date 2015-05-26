@@ -6,6 +6,8 @@ import itertools
 
 import networkx as nx
 
+import multiprocess_logging as logging
+
 # vs:   iterable(V)
 # es:   {E: (V, V)}
 # v_xs: {V: float}
@@ -53,15 +55,24 @@ def planar_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
 
+	logger = logging.getLogger() # XXX
+
 	# "First" nodes/edges for each cycle are chosen in an order such that the first edge
 	#  may never belong to a later cycle.
 
 	# rotate to (hopefully) break any ties or near-ties along the y axis
-	rotate_graph(g, random.random() * 2 * math.pi)
+	rotation_angle = random.random() * 2 * math.pi
+	rotate_graph(g, rotation_angle)
+
+	logger.debug('rotation_angle %s', rotation_angle) # XXX
 
 	# NOTE: may want to verify that no ties exist after the rotation
+	ys = nx.get_node_attributes(g, 'y').values() # XXX
+	ys1 = sorted(ys) # XXX
+	logger.debug('min y difference: %s', min(abs(a-b) for a,b in zip(ys1, ys1[1:]))) # XXX
 
-	nx.set_edge_attributes(g, 'used_once', {e: False for e in g.edges()})
+	nx.set_edge_attributes(g, 'used_once', {e: False for e in g.edges()}) # XXX
+
 
 	# precompute edge angles
 	angles = {}
@@ -92,6 +103,9 @@ def planar_cycle_basis_impl(g):
 			remove_cycle_edges(g, path)
 
 			cycles.append(path)
+
+	logger.debug('cyclebasis cycles: %s', len(cycles)) # XXX
+	logger.debug('cyclebasis edges: %s',  sum(map(len, cycles)) - len(cycles)) # don't double-count root # XXX
 
 	return cycles
 
