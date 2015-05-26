@@ -19,7 +19,7 @@ from circuit import Circuit
 from graphs.planar_cycle_basis import planar_cycle_basis
 from resistances_common import *
 
-import pick
+import node_selection
 
 def main():
 	import argparse
@@ -30,16 +30,22 @@ def main():
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
+
 	args = parser.parse_args(sys.argv[1:])
+
+	#selector = node_selection.uniform()
+	selector = node_selection.by_deleted_neighbors([1,10**3,10**4,10**7])
 
 	f = lambda : run_trial_fpath(
 		steps = args.steps,
 		path = args.input,
-		selection_func = selection_funcs.near_deleted,
+		selection_func = selector.selection_func,
 		verbose = args.verbose
 	)
 
 	info = {}
+
+	info['selection_mode'] = selector.info()
 
 	info['process_count'] = args.jobs
 
@@ -54,20 +60,6 @@ def main():
 
 #	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
 #	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
-
-class selection_funcs:
-	@staticmethod
-	def uniform(g, initial_g):
-		return [pick.uniform(get_deletable_nodes(g))]
-
-	@staticmethod
-	def near_deleted(g, initial_g):
-		max_nbrs = initial_g.degree()
-		cur_nbrs = g.degree(get_deletable_nodes(g))
-		missing_nbrs = {v: max_nbrs[v] - cur_nbrs[v] for v in cur_nbrs}
-
-		weightfunc = [1,10**3,10**4,10**7].__getitem__
-		return [pick.weighted(missing_nbrs, map(weightfunc, missing_nbrs.values()))]
 
 # Runs a nullary function the specified number of times and collects the results into an array.
 # Each process will be given a unique random seed
@@ -88,6 +80,9 @@ def run_trial_fpath(steps, path, selection_func, *, verbose=False):
 	trial_info['filepath'] = path
 	return trial_info
 
+#def run_trial_nx(steps, g, selection_func, *, verbose=False):
+	#profile.runctx('run_trial_nx_(steps,g,selection_func,verbose=verbose)',locals(),globals(),sort='tot')
+
 def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	if verbose:
 		print('Starting')
@@ -99,6 +94,8 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
+	choices = get_deletable_nodes(g)
+
 	step_info = trial_info['steps']
 	for step in range(steps):
 		t = time.time()
@@ -106,15 +103,16 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		# the big heavy calculation!
 		current = compute_current_planar_nx(g)
 
-		# delete some nodes
-		deleted = selection_func(g, initial_g)
-		remove_nodes_from(g, deleted)
+		# delete a node
+		deleted = selection_func(choices, g, initial_g)
+		choices.remove(deleted)
+		g.remove_node(deleted)
 
 		runtime = time.time() - t
 
 		step_info['runtime'].append(runtime)
 		step_info['current'].append(current)
-		step_info['deleted'].append(list(deleted))
+		step_info['deleted'].append([deleted]) # list in anticipation of multiple deletions
 
 		if verbose:
 			print('step:', step, 'time:', runtime, 'current:', current)
@@ -169,14 +167,6 @@ def read_graph(path):
 
 def get_deletable_nodes(g):
 	return set(v for v in g if g.node[v][VATTR_REMOVABLE])
-
-# Prefer g.remove_node over g.remove_nodes_from.
-# (the latter silently ignores invalid nodes, which is a problem
-#  on the off-chance that it is accidentally supplied with a
-#  node of an iterable type (i.e. string) instead of a list)
-def remove_nodes_from(g, nodes):
-	for v in nodes:
-		g.remove_node(v)
 
 def graph_info_circuit(circuit):
 	return {
