@@ -16,7 +16,7 @@ from multiprocessing import Pool
 import multiprocessing_dill
 
 from circuit import Circuit
-from graphs.planar_cycle_basis import planar_cycle_basis
+import graphs.planar_cycle_basis as planar_cycle_basis
 from resistances_common import *
 
 import node_selection
@@ -94,19 +94,21 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
-	choices = get_deletable_nodes(g)
+	choices    = get_deletable_nodes(g)
+	cyclebasis = cyclebasis_planar_nx(g)
 
 	step_info = trial_info['steps']
 	for step in range(steps):
 		t = time.time()
 
 		# the big heavy calculation!
-		current = compute_current_planar_nx(g)
+		current = compute_current_nx(g, cyclebasis)
 
 		# delete a node
 		deleted = selection_func(choices, g, initial_g)
-		choices.remove(deleted)
 		g.remove_node(deleted)
+		choices.remove(deleted)
+		cyclebasis = planar_cycle_basis.without_vertex(cyclebasis, deleted)
 
 		runtime = time.time() - t
 
@@ -141,24 +143,24 @@ def visualize_selection_func(g, selection_func, nsteps):
 
 	plt.show()
 
-def compute_current_planar_nx(g):
-	circuit = circuit_from_nx(g)
-
+def cyclebasis_planar_nx(g):
 	xs = {v:g.node[v]['x'] for v in g}
 	ys = {v:g.node[v]['y'] for v in g}
+
+	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
+
+def compute_current_nx(g, vertex_cyclebasis):
+	circuit = circuit_from_nx(g)
 
 	measure_s = g.graph[GATTR_MEASURE_SOURCE]
 	measure_t = g.graph[GATTR_MEASURE_TARGET]
 
 	measure_e = circuit.arbitrary_edge(measure_s, measure_t)
 
-	return compute_current_planar(circuit, measure_e, xs, ys)
-
-def compute_current_planar(circuit, measured_edge, xs, ys):
-	es = {e: circuit.edge_endpoints(e) for e in circuit.edges()}
-	vertex_cyclebasis = planar_cycle_basis(circuit.vertices(), es, xs, ys)
 	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
+	return compute_current(circuit, measure_e, edge_cyclebasis)
 
+def compute_current(circuit, measured_edge, edge_cyclebasis):
 	return circuit.compute_currents(edge_cyclebasis)[measured_edge]
 
 def read_graph(path):
