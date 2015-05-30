@@ -21,6 +21,8 @@ from resistances_common import *
 
 import node_selection
 
+from util import window2
+
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
@@ -50,7 +52,10 @@ def main():
 	info['process_count'] = args.jobs
 
 	info['time_started'] = int(time.time())
-	info['trials'] = run_parallel(f, threads=args.jobs, times=args.trials)
+	if args.jobs == 1:
+		info['trials'] = [f() for _ in range(args.trials)]
+	else:
+		info['trials'] = run_parallel(f, threads=args.jobs, times=args.trials)
 	info['time_finished'] = int(time.time())
 
 	if args.output_json is not None:
@@ -209,13 +214,27 @@ def to_edge_path(circuit, vertex_path):
 	# or better yet just get rid of my silly pointless incomplete graph library >_>
 	return [circuit.arbitrary_edge(u,v) for (u,v) in window2(vertex_path)]
 
-# A scrolling 2-element window on an iterator
-def window2(it):
-	it = iter(it)
-	prev = next(it)
-	for x in it:
-		yield (prev,x)
-		prev = x
+def copy_without_attributes_nx(g):
+	result = nx.Graph()
+	result.add_nodes_from(g)
+	result.add_edges_from(g.edges())
+	return result
+
+def set_node_attributes_checked(g, name, d):
+	if any(v not in d for v in g):
+		raise KeyError('attribute dict does not include all nodes!')
+	nx.set_node_attributes(g, name, d)
+
+def write_plottable_nx(g, path, pos):
+	outg = copy_without_attributes_nx(g)
+	set_node_attributes_checked(outg, 'pos', pos)
+
+	nx.write_gpickle(outg, path)
+
+def write_cyclebasis(cyclebasis, path):
+	s = json.dumps(cyclebasis)
+	with open(path, 'w') as f:
+		f.write(s)
 
 if __name__ == '__main__':
 	main()

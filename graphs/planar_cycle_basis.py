@@ -6,11 +6,19 @@ import itertools
 
 import networkx as nx
 
+from util import window2
+
 __all__ = [
 	'planar_cycle_basis',
 	'planar_cycle_basis_nx',
 	'without_vertex',
 ]
+
+# MASSIVE TODO: planar_cycle_basis_nx appears to be very buggy and
+#  unreliable right now, especially once many vertices are removed
+#  from the bridge.  Its role has been reduced to just generating
+#  the initial cyclebasis for now, but at some point I gotta get
+#  in there with a debugger and figure out what's up
 
 # vs:   iterable(V)
 # es:   {E: (V, V)}
@@ -172,14 +180,6 @@ def remove_filament(g,v):
 		neighbor = next(iter(g.edge[v]))
 		g.remove_edge(v, neighbor)
 		v = neighbor
-
-# A scrolling 2-element window on an iterator
-def window2(it):
-	it = iter(it)
-	prev = next(it)
-	for x in it:
-		yield (prev,x)
-		prev = x
 
 #----------------------------------------------------
 
