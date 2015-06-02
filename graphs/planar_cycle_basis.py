@@ -12,6 +12,7 @@ __all__ = [
 	'planar_cycle_basis',
 	'planar_cycle_basis_nx',
 	'without_vertex',
+	'cyclebases_equal',
 ]
 
 # MASSIVE TODO: planar_cycle_basis_nx appears to be very buggy and
@@ -52,6 +53,19 @@ def planar_cycle_basis_nx(g, xs, ys):
 	return planar_cycle_basis_impl(my_g)
 
 
+def show_g(g, cycle=None, with_labels=False):
+	import matplotlib.pyplot as plt
+	xs = nx.get_node_attributes(g,'x')
+	ys = nx.get_node_attributes(g,'y')
+	pos = {v:(xs[v],ys[v]) for v in xs}
+	fig, ax = plt.subplots()
+	nx.draw_networkx(g, with_labels=with_labels, ax=ax, pos=pos, nodelist=[])
+	if cycle is not None:
+		edges = list(path_edges(cycle))
+		nx.draw_networkx(g, ax=ax, pos=pos, with_labels=False, nodelist=[cycle[0]], edgelist=edges, edge_color='r', width=2, node_size=5)
+	plt.show()
+
+
 def edge_angle(g, s, t):
 	s_attr, t_attr = g.node[s], g.node[t]
 	return math.atan2(t_attr['y']-s_attr['y'], t_attr['x']-s_attr['x'])
@@ -61,8 +75,7 @@ def edge_angle(g, s, t):
 #  vertex props:
 #    x
 #    y
-#  edge props:
-#    ...
+# WARNING: The graph will be mutated.
 def planar_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
@@ -86,7 +99,7 @@ def planar_cycle_basis_impl(g):
 	# identify and clear away edges which cannot belong to cycles
 	for v in g:
 		if degree(g,v) == 1:
-			remove_filament(g, v)
+			remove_filament_from_tip(g, v)
 
 	cycles = []
 
@@ -99,14 +112,29 @@ def planar_cycle_basis_impl(g):
 			if not g.has_edge(root, target):
 				continue
 
-			path = maybe_complete_cw_cycle(g, root, target, angles)
-			if path is None:
-				continue
+			discriminator, path = trace_ccw_path(g, root, target, angles)
 
-			remove_cycle_edges(g, path)
+			if discriminator == PATH_PLANAR_CYCLE:
+				assert path[0] == path[-1]
+				remove_cycle_edges(g, path)
+				cycles.append(path)
 
-			cycles.append(path)
+			# Both the dead end and the initial edge belong to filaments
+			elif discriminator == PATH_DEAD_END:
+				import pdb;pdb.set_trace()
+				remove_filament_from_edge(g, root, target)
+				remove_filament_from_tip(g, path[-1])
 
+			# The initial edge must be part of a filament
+			elif discriminator == PATH_OTHER_CYCLE:
+				import pdb;pdb.set_trace()
+				remove_filament_from_edge(g, root, target)
+
+			else: assert False # complete switch
+
+			assert not g.has_edge(root, target)
+
+	assert len(g.edges()) == 0
 	return cycles
 
 # g.degree is a tad slow
@@ -117,44 +145,60 @@ def rotate_graph(g, angle):
 	xs = nx.get_node_attributes(g, 'x')
 	ys = nx.get_node_attributes(g, 'y')
 
-	sin,cos = math.sin(angle), math.cos(angle)
-	for v in g:
-		x, y = xs[v], ys[v]
-		xs[v] = cos*x - sin*y
-		ys[v] = sin*x + cos*y
+	xs,ys = rotate_coord_maps(xs, ys, angle)
 
 	nx.set_node_attributes(g, 'x', xs)
 	nx.set_node_attributes(g, 'y', ys)
 
-def maybe_complete_cw_cycle(g, vfirst, vsecond, angles):
+def rotate_coord_maps(xs, ys, angle):
+	sin,cos = math.sin(angle), math.cos(angle)
+	newx = {v: cos*xs[v] - sin*ys[v] for v in xs}
+	newy = {v: sin*xs[v] + cos*ys[v] for v in xs}
+	return newx,newy
+
+
+# Attempts to trace a planar cycle by following the contour counterclockwise.
+# May not necessarily find a good cycle.
+PATH_DEAD_END     = 'dead end'
+PATH_PLANAR_CYCLE = 'cycle'
+PATH_OTHER_CYCLE  = 'revisited'
+def trace_ccw_path(g, vfirst, vsecond, angles):
 	prev, cur = vfirst, vsecond
-	path = [vfirst, vsecond]
-	forbidden = set([vsecond]) # non-root path nodes (which may not be revisited)
+	path = [vfirst]
+	visited = set(path)
 
 	def interior_angle_cw(v1, v2, v3):
 		return (angles[v2,v1] - angles[v2,v3]) % (2*math.pi)
 
-	def bad_edge(v1, v2):
-		return v2 == path[-2] or v2 in forbidden
+	while cur not in visited:
 
-	while cur != vfirst:
+		assert g.has_edge(path[-1],cur)
+		path.append(cur)
+		visited.add(cur)
+
+		# find edge with smallest clockwise interior angle...
 		neighbor_it = iter(sorted(g[cur], key = lambda t: interior_angle_cw(prev, cur, t)))
-		neighbor_it = itertools.dropwhile(lambda t: bad_edge(cur, t), neighbor_it)
-
-		target = next(neighbor_it, None)
-
-		if target is None: # no good edges; dead end
-			return None
+		# ... excluding the edge that brought us here
+		neighbor_it = itertools.dropwhile(lambda t: t == path[-2], neighbor_it)
 
 		prev = cur
-		cur = target
+		cur  = next(neighbor_it, None)
 
-		path.append(target)
-		forbidden.add(target)
-		assert g.has_edge(path[-2],path[-1])
+		if cur is None:
+			# no edges except the way we came;
+			assert path[-1] == prev
+			return (PATH_DEAD_END, path)
 
-	assert path[0] == path[-1]
-	return path
+	assert cur in visited
+	path.append(cur)
+
+	if cur == vfirst:
+		# made it back to the start: planar cycle
+		return (PATH_PLANAR_CYCLE, path)
+	else:
+		# found another previous vertex: cycle of unknown quality
+		return (PATH_OTHER_CYCLE, path)
+	assert False
 
 def remove_cycle_edges(g, path):
 	assert len(path) == len(set(path)) + 1
@@ -168,18 +212,97 @@ def remove_cycle_edges(g, path):
 	if g.has_edge(path[0], path[1]):
 		g.remove_edge(path[0], path[1])
 
-	# clear away any filaments left behind
 	for v in path:
 		if degree(g,v) == 1:
-			remove_filament(g,v)
+			remove_filament_from_tip(g,v)
+
+# deletes a chain of sequentially linked edges given one of them
+def remove_filament_from_edge(g,s,t):
+	g.remove_edge(s, t)
+	for v in (s,t):
+		if degree(g,v) == 1:
+			remove_filament_from_tip(g,v)
 
 # deletes an orphaned chain of edges, given the vertex at its end
-def remove_filament(g,v):
+def remove_filament_from_tip(g,v):
 	assert degree(g,v) == 1
 	while degree(g,v) == 1:
 		neighbor = next(iter(g.edge[v]))
 		g.remove_edge(v, neighbor)
 		v = neighbor
+
+
+path_edges = window2
+
+def test_known_cyclebasis(g, xs, ys, expected):
+	print('ex',canonicalize_cyclebasis(expected))
+	for step in range(10):
+		rotx, roty = rotate_coord_maps(xs, ys, 2*math.pi*random.random())
+		cb = planar_cycle_basis_nx(g, rotx, roty)
+
+		print('cb',canonicalize_cyclebasis(cb))
+		assert cyclebases_equal(cb, expected)
+
+# a cycle inside another, sharing a vertex
+def test_triangles():
+	g = nx.Graph()
+	g.add_path([0,1,2,0,3,4,0])
+	xs,ys = {}, {}
+	xs[0] =  0.0; ys[0] = 0.0
+	xs[1] = -0.5; ys[1] = 1.0
+	xs[2] = +0.5; ys[2] = 1.0
+	xs[3] = -1.5; ys[3] = 2.0
+	xs[4] = +1.5; ys[4] = 2.0
+
+	test_known_cyclebasis(g, xs, ys, [[0,1,2,0],[0,3,4,0]])
+
+# a cycle inside another, connected by a 1-edge filament
+def test_hanging_diamond():
+	g = nx.Graph()
+	g.add_path([0,1,2,3,0,4,5,6,7,4])
+	xs,ys = {v:0.0 for v in g}, {v:0.0 for v in g}
+
+	xs[1] = +1.0; xs[5] = +0.5
+	xs[3] = -1.0; xs[7] = -0.5
+	ys[0] = +1.0; ys[4] = +0.5
+	ys[2] = -1.0; ys[6] = -0.5
+
+	test_known_cyclebasis(g, xs, ys, [[0,1,2,3,0],[4,5,6,7,4]])
+
+#----------------------------------------------------
+
+def cyclebases_equal(a, b):
+	if len(a) != len(b):
+		return False
+
+	a_vertices = set(itertools.chain(*a))
+	b_vertices = set(itertools.chain(*b))
+
+	if a_vertices != b_vertices:
+		return False
+
+	vertex_ids = {v:i for i,v in enumerate(a_vertices)}
+	a_canonical = canonicalize_cyclebasis(a, key=vertex_ids.__getitem__)
+	b_canonical = canonicalize_cyclebasis(a, key=vertex_ids.__getitem__)
+
+	return a_canonical == b_canonical
+
+def canonicalize_cyclebasis(cyclebasis, key=lambda v:v):
+	return sorted(canonicalize_cycle(c,key) for c in cyclebasis)
+
+def canonicalize_cycle(seq, key=lambda x:x):
+	seq = tuple(map(key, seq))
+
+	assert seq[0] == seq[-1] # code dependency on precise format of cycles
+
+	# Rotate to place minimum element first
+	seq = rotate_cycle(seq, seq.index(min(seq)))
+
+	# Flip direction to minimize second element
+	if seq[-2] < seq[1]:
+		seq = seq[::-1]
+
+	return seq
 
 #----------------------------------------------------
 
@@ -432,3 +555,6 @@ assert recombine_aligned_paths([[1,2,3],[4,5,6]]) == [[1,2,3],[4,5,6]] # bad-ish
 assert recombine_aligned_paths([[1,2,3],[5,6,7],[3,4,5]]) == [[1,2,3,4,5,6,7]]
 assert is_cycle(recombine_aligned_paths([[1,2,3],[5,6,1],[3,4,5]]))
 
+test_triangles()
+test_inner_diamond()
+import sys;sys.exit(0)
