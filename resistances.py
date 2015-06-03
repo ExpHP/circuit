@@ -115,6 +115,9 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		choices.remove(deleted)
 		cyclebasis = planar_cycle_basis.without_vertex(cyclebasis, deleted)
 
+#		if step > 125 and step % 3 == 0:
+#			debug_cyclebasis_planar_nx(g, expected=cyclebasis)
+
 		runtime = time.time() - t
 
 		step_info['runtime'].append(runtime)
@@ -125,6 +128,20 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 			print('step:', step, 'time:', runtime, 'current:', current)
 
 	return trial_info
+
+def debug_cyclebasis_planar_nx(g, expected):
+	cyclebasis = cyclebasis_planar_nx(g)
+	if len(cyclebasis) != len(expected):
+		cbpath = 'err.cycles'
+		gpath  = 'err.gpickle'
+		print('cyclebasis length mismatch!')
+		print('writing {} and {}'.format(cbpath, gpath))
+		xs = nx.get_node_attributes(g, 'x')
+		ys = nx.get_node_attributes(g, 'y')
+		pos = {v:(xs[v],ys[v]) for v in g}
+		write_cyclebasis(gcyclebasis, cbpath)
+		write_plottable_nx(g, gpath, pos)
+		import sys; sys.exit(1)
 
 def visualize_selection_func(g, selection_func, nsteps):
 	initial_g = g.copy()

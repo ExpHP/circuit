@@ -15,12 +15,6 @@ __all__ = [
 	'cyclebases_equal',
 ]
 
-# MASSIVE TODO: planar_cycle_basis_nx appears to be very buggy and
-#  unreliable right now, especially once many vertices are removed
-#  from the bridge.  Its role has been reduced to just generating
-#  the initial cyclebasis for now, but at some point I gotta get
-#  in there with a debugger and figure out what's up
-
 # vs:   iterable(V)
 # es:   {E: (V, V)}
 # v_xs: {V: float}
@@ -50,8 +44,18 @@ def planar_cycle_basis_nx(g, xs, ys):
 	nx.set_node_attributes(my_g, 'x', xs)
 	nx.set_node_attributes(my_g, 'y', ys)
 
-	return planar_cycle_basis_impl(my_g)
+	# BAND-AID (HACK)
+	# This algorithm has an unresolved issue with graphs that have at least
+	#   two biconnected components, one of which is "inside" another
+	#   (geometrically speaking).  Luckily, it is safe to look at each
+	#   biconnected component separately, as all edges in a cycle always
+	#   belong to the same biconnected component.
+	result = []
+	for subg in nx.biconnected_component_subgraphs(my_g):
+		if len(subg) >= 3: # minimum possible size for cycles to exist
+			result.extend(planar_cycle_basis_impl(subg))
 
+	return result
 
 def show_g(g, cycle=None, with_labels=False):
 	import matplotlib.pyplot as plt
@@ -79,6 +83,7 @@ def edge_angle(g, s, t):
 def planar_cycle_basis_impl(g):
 	assert not g.is_directed()
 	assert not g.is_multigraph()
+	assert nx.is_biconnected(g) # BAND-AID
 
 	# "First" nodes/edges for each cycle are chosen in an order such that the first edge
 	#  may never belong to a later cycle.
@@ -121,13 +126,12 @@ def planar_cycle_basis_impl(g):
 
 			# Both the dead end and the initial edge belong to filaments
 			elif discriminator == PATH_DEAD_END:
-				import pdb;pdb.set_trace()
 				remove_filament_from_edge(g, root, target)
 				remove_filament_from_tip(g, path[-1])
 
 			# The initial edge must be part of a filament
+			# FIXME: Not necessarily true if graph is not biconnected
 			elif discriminator == PATH_OTHER_CYCLE:
-				import pdb;pdb.set_trace()
 				remove_filament_from_edge(g, root, target)
 
 			else: assert False # complete switch
@@ -235,13 +239,17 @@ def remove_filament_from_tip(g,v):
 path_edges = window2
 
 def test_known_cyclebasis(g, xs, ys, expected):
-	print('ex',canonicalize_cyclebasis(expected))
 	for step in range(10):
 		rotx, roty = rotate_coord_maps(xs, ys, 2*math.pi*random.random())
 		cb = planar_cycle_basis_nx(g, rotx, roty)
 
-		print('cb',canonicalize_cyclebasis(cb))
 		assert cyclebases_equal(cb, expected)
+
+
+#----------------------------------------------------
+# These two tests identify rather nasty edge cases;
+# As it turns out, the problems of determining a planar cycle basis and
+#  of identifying faces in a planar graph are NOT equivalent.
 
 # a cycle inside another, sharing a vertex
 def test_triangles():
@@ -556,5 +564,4 @@ assert recombine_aligned_paths([[1,2,3],[5,6,7],[3,4,5]]) == [[1,2,3,4,5,6,7]]
 assert is_cycle(recombine_aligned_paths([[1,2,3],[5,6,1],[3,4,5]]))
 
 test_triangles()
-test_inner_diamond()
-import sys;sys.exit(0)
+test_hanging_diamond()
