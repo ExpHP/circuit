@@ -55,6 +55,13 @@ def planar_cycle_basis_nx(g, xs, ys):
 		if len(subg) >= 3: # minimum possible size for cycles to exist
 			result.extend(planar_cycle_basis_impl(subg))
 
+	# Restore some confidence in the result...
+	if len(result) != len(nx.cycle_basis(g)):
+		raise RuntimeError(
+			'planar_cycle_basis produced a result of incorrect '
+			'length on the given graph! (does it have crossing edges?)'
+		)
+
 	return result
 
 def show_g(g, cycle=None, with_labels=False):
