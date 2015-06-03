@@ -21,7 +21,7 @@ from resistances_common import *
 
 import node_selection
 
-from util import window2
+import graphs.vertexpath as vpath
 
 def main():
 	import argparse
@@ -229,7 +229,7 @@ def to_edge_path(circuit, vertex_path):
 	# HACK should be SingleGraph.get_edge instead of BaseGraph.get_arbitrary_edge
 	#     but I haven't implemented the former class yet
 	# or better yet just get rid of my silly pointless incomplete graph library >_>
-	return [circuit.arbitrary_edge(u,v) for (u,v) in window2(vertex_path)]
+	return [circuit.arbitrary_edge(u,v) for (u,v) in vpath.edges(vertex_path)]
 
 def copy_without_attributes_nx(g):
 	result = nx.Graph()

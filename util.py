@@ -7,3 +7,12 @@ def window2(it):
 		yield (prev,x)
 		prev = x
 
+# struggling to understand why unittest doesn't offer its useful
+#  assertions as free functions
+def assertRaises(cls, f, *args, **kw):
+	try:
+		f(*args,**kw)
+	except cls:
+		return
+	assert False
+

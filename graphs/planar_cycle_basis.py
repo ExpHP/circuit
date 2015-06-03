@@ -6,13 +6,13 @@ import itertools
 
 import networkx as nx
 
-from util import window2
+from util import assertRaises
+import graphs.vertexpath as vpath
 
 __all__ = [
 	'planar_cycle_basis',
 	'planar_cycle_basis_nx',
 	'without_vertex',
-	'cyclebases_equal',
 ]
 
 # vs:   iterable(V)
@@ -72,7 +72,7 @@ def show_g(g, cycle=None, with_labels=False):
 	fig, ax = plt.subplots()
 	nx.draw_networkx(g, with_labels=with_labels, ax=ax, pos=pos, nodelist=[])
 	if cycle is not None:
-		edges = list(path_edges(cycle))
+		edges = list(vpath.edges(cycle))
 		nx.draw_networkx(g, ax=ax, pos=pos, with_labels=False, nodelist=[cycle[0]], edgelist=edges, edge_color='r', width=2, node_size=5)
 	plt.show()
 
@@ -215,7 +215,7 @@ def remove_cycle_edges(g, path):
 	assert len(path) == len(set(path)) + 1
 
 	# delete any edge belonging to two cycles
-	for prev, cur in window2(path):
+	for prev, cur in vpath.edges(path):
 		if g.edge[prev][cur]['used_once']: g.remove_edge(prev,cur)
 		else: g.edge[prev][cur]['used_once'] = True
 
@@ -243,14 +243,12 @@ def remove_filament_from_tip(g,v):
 		v = neighbor
 
 
-path_edges = window2
-
 def test_known_cyclebasis(g, xs, ys, expected):
 	for step in range(10):
 		rotx, roty = rotate_coord_maps(xs, ys, 2*math.pi*random.random())
 		cb = planar_cycle_basis_nx(g, rotx, roty)
 
-		assert cyclebases_equal(cb, expected)
+		assert vpath.cyclebases_equal(cb, expected)
 
 
 #----------------------------------------------------
@@ -286,41 +284,6 @@ def test_hanging_diamond():
 
 #----------------------------------------------------
 
-def cyclebases_equal(a, b):
-	if len(a) != len(b):
-		return False
-
-	a_vertices = set(itertools.chain(*a))
-	b_vertices = set(itertools.chain(*b))
-
-	if a_vertices != b_vertices:
-		return False
-
-	vertex_ids = {v:i for i,v in enumerate(a_vertices)}
-	a_canonical = canonicalize_cyclebasis(a, key=vertex_ids.__getitem__)
-	b_canonical = canonicalize_cyclebasis(a, key=vertex_ids.__getitem__)
-
-	return a_canonical == b_canonical
-
-def canonicalize_cyclebasis(cyclebasis, key=lambda v:v):
-	return sorted(canonicalize_cycle(c,key) for c in cyclebasis)
-
-def canonicalize_cycle(seq, key=lambda x:x):
-	seq = tuple(map(key, seq))
-
-	assert seq[0] == seq[-1] # code dependency on precise format of cycles
-
-	# Rotate to place minimum element first
-	seq = rotate_cycle(seq, seq.index(min(seq)))
-
-	# Flip direction to minimize second element
-	if seq[-2] < seq[1]:
-		seq = seq[::-1]
-
-	return seq
-
-#----------------------------------------------------
-
 # Updates a cyclebasis for a straight-edge planar graph to account for the
 #  removal of the given vertex
 def without_vertex(cyclebasis, v):
@@ -331,7 +294,7 @@ def without_vertex(cyclebasis, v):
 
 	segments = align_paths(segments)
 	segments = recombine_aligned_paths(segments)
-	newcycles = list(filter(is_cycle, segments))
+	newcycles = list(filter(vpath.is_cycle, segments))
 	assert len(newcycles) < 2 # straight-edge planar graph should not form more than 1 new cycle
 
 	newcycles = [simplify_retraced_edges(c) for c in newcycles]
@@ -341,19 +304,9 @@ def without_vertex(cyclebasis, v):
 
 # Return the path formed by removing a vertex from a cycle
 def break_cycle_at(cycle, v):
-	cycle = rotate_cycle(cycle, cycle.index(v))
+	cycle = vpath.rotate_cycle(cycle, cycle.index(v))
 	assert cycle[0] == cycle[-1] == v
 	return cycle[1:-1]
-
-def rotate_cycle(cycle, n):
-	assert cycle[0] == cycle[-1] # don't replace with is_cycle
-	                             # (this method is dependent on the precise format of cycles)
-	n %= (len(cycle) - 1)
-	return cycle[n:] + cycle[1:n+1]
-
-assert rotate_cycle([4,5,6,7,8,4],3)  == [7,8,4,5,6,7]
-assert rotate_cycle([4,5,6,7,8,4],-1) == [8,4,5,6,7,8]
-assert rotate_cycle([4,5,6,7,8,4],0)  == [4,5,6,7,8,4]
 
 assert break_cycle_at([4,5,6,7,8,4],6) == [7,8,4,5]
 assert break_cycle_at([4,5,6,7,8,4],4) == [5,6,7,8]
@@ -381,9 +334,6 @@ assert     are_aligned([[1,2],[2,1]]) # two shared endpoints between two edges i
 assert     are_aligned([[1,2,3],[6,7,1],[3,4,5]])
 assert not are_aligned([[1,2,3],[6,7,1],[5,4,3]]) # duplicate end (3)
 assert not are_aligned([[1,2,3],[1,7,6],[3,4,5]]) # duplicate first (1)
-
-def is_cycle(path):
-	return path[0] == path[-1]
 
 # Returns an aligned set of paths made by reversing some of the paths.
 # It is an error if this is not possible (e.g. if 3 paths share an endpoint)
@@ -463,8 +413,8 @@ def recombine_aligned_paths(paths):
 			# try sticking 'old' onto one of the 'new' paths
 			for newI,new in enumerate(new_paths):
 
-				if can_join_vertex_paths(old, new):
-					new_paths[newI] = join_vertex_paths(old, new)
+				if vpath.can_join(old, new, swapok=True):
+					new_paths[newI] = vpath.join(old, new, swapok=True)
 					again = True
 					break
 
@@ -477,46 +427,6 @@ def recombine_aligned_paths(paths):
 		paths = new_paths
 
 	return paths
-
-def can_join_vertex_paths(a, b):
-	return a[0] == b[-1] or b[0] == a[-1]
-
-def join_vertex_paths(a, b):
-	# use common vertex to determine order of paths
-	if a[-1] != b[0]:
-		a,b = b,a
-	if a[-1] != b[0]:
-		raise ValueError('Paths cannot be joined at either end!')
-
-	tmp = a[:-1] # exclude common vertex
-	tmp.extend(b)
-	return tmp
-
-# TODO: there's probably another better known algorithm for this
-def simplify_retraced_edges(cycle):
-	# use a stack to identify retraced sequences
-
-	# begin with a copy of the cycle already on the stack, so we can
-	#  detect retraced sequences that wrap around the list ends
-	stack = cycle[:-1]
-
-	# parameters of result
-	offset = len(stack)
-	length = len(cycle) - 1
-
-	for v in cycle[:-1]:
-		# check against SECOND to last; ABA should become A
-		if stack[-2] == v:
-			stack.pop()
-			length -= 2
-		else:
-			stack.append(v)
-
-		offset = min(offset, len(stack))
-
-	result = stack[offset : offset+length]
-	result.append(result[0]) # make into cycle
-	return result
 
 # TODO: there's probably another better known algorithm for this
 def simplify_retraced_edges(cycle):
@@ -543,32 +453,15 @@ def simplify_retraced_edges(cycle):
 def cycle_permutations(c):
 	c = list(c)
 	for i in range(len(c)-1):
-		yield rotate_cycle(c,i)
+		yield vpath.rotate_cycle(c,i)
 
 # check permutations to verify it catches stuff wrapping around the end
 for c in cycle_permutations([3,50,70,3,2,1,0,-1,-2,-1,0,1,2,3]):
 	assert simplify_retraced_edges(c) in cycle_permutations([3,50,70,3])
 
-# struggling to understand why unittest doesn't offer its useful
-#  assertions as free functions
-def assertRaises(cls, f, *args, **kw):
-	try:
-		f(*args,**kw)
-	except cls:
-		return
-	assert False
-
-assert     can_join_vertex_paths([1,2,3],[3,4,5])
-assert     can_join_vertex_paths([3,4,5],[1,2,3])
-assert not can_join_vertex_paths([1,2,3],[7,8,9])
-
-assert join_vertex_paths([1,2],[2,3,4]) == [1,2,3,4]
-assert join_vertex_paths([2,3,4],[1,2]) == [1,2,3,4]
-assertRaises(ValueError, join_vertex_paths, [1,2], [3,4,5])
-
 assert recombine_aligned_paths([[1,2,3],[4,5,6]]) == [[1,2,3],[4,5,6]] # bad-ish test; output order is arbitrary
 assert recombine_aligned_paths([[1,2,3],[5,6,7],[3,4,5]]) == [[1,2,3,4,5,6,7]]
-assert is_cycle(recombine_aligned_paths([[1,2,3],[5,6,1],[3,4,5]]))
+assert vpath.is_cycle(recombine_aligned_paths([[1,2,3],[5,6,1],[3,4,5]]))
 
 test_triangles()
 test_hanging_diamond()
