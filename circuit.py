@@ -112,19 +112,35 @@ class Circuit(UndirectedGraph):
 		if cyclebasis is None:
 			cyclebasis = self.cycle_basis()
 
-		# For each edge, generate a list of (index, sign) for each cycle that crosses it.
-		# This is used to go back and forth between the cycle currents and the individual
-		#  edge currents.
+		cycles_from_edge = self._generate_cycles_from_edge(cyclebasis)
+
+		# Generate matrices
+		V = self._generate_voltage_vector(cyclebasis)
+		R = self._generate_resistance_matrix(cyclebasis, cycles_from_edge)
+
+		# Solve linear system
+		cycle_currents = _solve_sparse(R,V).reshape([len(cyclebasis)])
+
+		edge_currents = self._compute_edge_currents(cycle_currents, cycles_from_edge)
+		return edge_currents
+
+
+	# For each edge, generate a list of (index, sign) for each cycle that crosses it.
+	# This is used to go back and forth between the cycle currents and the individual
+	#  edge currents.
+	def _generate_cycles_from_edge(self, cyclebasis):
 		cycles_from_edge = {e:[] for e in self.edges()}
 
 		for pathI, path in enumerate(cyclebasis):
 			for e, source in _iter_path_with_sources(self, path):
 				sign = self.edge_component(e).direction_sign(source)
 				cycles_from_edge[e].append((pathI, sign))
+		return cycles_from_edge
 
-		# Generate voltage vector
-		V = np.array([self.path_total_voltage(path) for path in cyclebasis])
+	def _generate_voltage_vector(self, cyclebasis):
+		return np.array([self.path_total_voltage(path) for path in cyclebasis])
 
+	def _generate_resistance_matrix(self, cyclebasis, cycles_from_edge):
 		# Build components of resistance matrix, in coo (COOrdinate format) sparse format
 		R_vals = []
 		R_rows = []
@@ -142,19 +158,19 @@ class Circuit(UndirectedGraph):
 				R_vals.extend([row_sign * col_sign * resistance for (_,col_sign) in ecycles])
 				assert len(R_vals) == len(R_rows) == len(R_cols)
 
-		R = sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
+		return sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
 
-		# Solve linear system
-		solver = spla.factorized(R.tocsc())
-		cycle_currents = solver(V).reshape([len(cyclebasis)])
-
-		# Build result:  a property map of {edge: current}
+	def _compute_edge_currents(self, cycle_currents, cycles_from_edge):
 		edge_currents = {}
 		for e in self.edges():
 			edge_currents[e] = sum(cycle_currents[cycleId] * sign for cycleId, sign in cycles_from_edge[e])
 
 		return edge_currents
 
+
+def _solve_sparse(mat,vec):
+	solver = spla.factorized(mat.tocsc())
+	return solver(vec)
 
 def test_two_separate_loops():
 	# A circuit with two connected components.
