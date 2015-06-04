@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 class uniform:
-	def selection_func(self, choices, g, initial_g):
+	def selection_func(self, choices, initial_g, past_selections):
 		return random.choice(list(choices))
 
 	def info(self):
@@ -16,22 +16,28 @@ class uniform:
 
 class by_deleted_neighbors:
 	def __init__(self, weights):
-		# NOTE: the caller is expected to provide an array that is at least as long
-		#       as the maximum degree of a deletable vertex in the graph.
 		self.weights = weights
 
-	def selection_func(self, choices, g, initial_g):
+	def selection_func(self, choices, initial_g, past_selections):
 		choices = list(choices) # make reusable iter
 
-		max_nbrs = initial_g.degree()
-		cur_nbrs = g.degree()
-		choice_weights = (self.weights[max_nbrs[v] - cur_nbrs[v]] for v in choices)
+		# count previously selected neighbors of each choice
+		weight_ids = {v:0 for v in choices}
+		for s in past_selections:
+			for t in initial_g.neighbors(s):
+				if t in weight_ids:
+					weight_ids[t] += 1
+
+		# use last element of self.weights for elements with too many deleted neighbors
+		weight_ids = {v:min(weight_ids[v], len(self.weights)-1) for v in weight_ids}
+
+		choice_weights = (self.weights[weight_ids[v]] for v in choices)
 
 		return pick_weighted(choices, choice_weights)
 
 	def info(self):
 		return {
-			'mode': 'by deleted neighbor count',
+			'mode': 'by neighbor defect count',
 			'weights': self.weights,
 		}
 

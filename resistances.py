@@ -20,13 +20,14 @@ import graphs.planar_cycle_basis as planar_cycle_basis
 from resistances_common import *
 
 import node_selection
+import node_deletion
 
 import graphs.vertexpath as vpath
 
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
-	parser.add_argument('input', type=str, help='.pickle file of networkx graph')
+	parser.add_argument('input', type=str, help='.gpickle file of networkx graph')
 	parser.add_argument('--verbose', '-v', action='store_true')
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
@@ -38,16 +39,20 @@ def main():
 	#selector = node_selection.uniform()
 	selector = node_selection.by_deleted_neighbors([1,10**3,10**4,10**7])
 
+	deletor  = node_deletion.annihilation()
+
 	f = lambda : run_trial_fpath(
 		steps = args.steps,
 		path = args.input,
 		selection_func = selector.selection_func,
-		verbose = args.verbose
+		deletion_func  = deletor.deletion_func,
+		verbose = args.verbose,
 	)
 
 	info = {}
 
 	info['selection_mode'] = selector.info()
+	info['defect_mode'] = deletor.info()
 
 	info['process_count'] = args.jobs
 
@@ -80,15 +85,15 @@ def run_parallel(f,*,threads,times):
 	p = Pool(threads)
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-def run_trial_fpath(steps, path, selection_func, *, verbose=False):
-	trial_info = run_trial_nx(steps, read_graph(path), selection_func, verbose=verbose)
+def run_trial_fpath(steps, path, selection_func, deletion_func, *, verbose=False):
+	trial_info = run_trial_nx(steps, read_graph(path), selection_func, deletion_func, verbose=verbose)
 	trial_info['filepath'] = path
 	return trial_info
 
 #def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	#profile.runctx('run_trial_nx_(steps,g,selection_func,verbose=verbose)',locals(),globals(),sort='tot')
 
-def run_trial_nx(steps, g, selection_func, *, verbose=False):
+def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 	if verbose:
 		print('Starting')
 
@@ -102,6 +107,8 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 	choices    = get_deletable_nodes(g)
 	cyclebasis = cyclebasis_planar_nx(g)
 
+	past_selections = []
+
 	step_info = trial_info['steps']
 	for step in range(steps):
 		t = time.time()
@@ -109,11 +116,12 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 		# the big heavy calculation!
 		current = compute_current_nx(g, cyclebasis)
 
-		# delete a node
-		deleted = selection_func(choices, g, initial_g)
-		g.remove_node(deleted)
-		choices.remove(deleted)
-		cyclebasis = planar_cycle_basis.without_vertex(cyclebasis, deleted)
+		# introduce a defect
+		vdeleted = selection_func(choices, initial_g, past_selections)
+		g, cyclebasis = deletion_func(g, cyclebasis, vdeleted)
+
+		past_selections.append(vdeleted)
+		choices.remove(vdeleted)
 
 #		if step > 125 and step % 3 == 0:
 #			debug_cyclebasis_planar_nx(g, expected=cyclebasis)
@@ -122,7 +130,7 @@ def run_trial_nx(steps, g, selection_func, *, verbose=False):
 
 		step_info['runtime'].append(runtime)
 		step_info['current'].append(current)
-		step_info['deleted'].append([deleted]) # list in anticipation of multiple deletions
+		step_info['deleted'].append([vdeleted]) # list in anticipation of multiple deletions
 
 		if verbose:
 			print('step:', step, 'time:', runtime, 'current:', current)
