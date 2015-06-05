@@ -3,7 +3,10 @@ import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as spla
 
-from graphs.basegraph import *
+import graphs.vertexpath as vpath
+import networkx as nx
+
+import util
 
 __all__ = [
 	'Circuit',
@@ -84,7 +87,7 @@ class Component:
 		return self.direction_sign(sourceVertex) * self._potential
 
 
-class Circuit(UndirectedGraph):
+class Circuit(nx.Graph):
 	def add_resistor(self, v1, v2, resistance):
 		self.add_component(v1,v2, resistance=resistance, voltage=0.0)
 
@@ -93,15 +96,17 @@ class Circuit(UndirectedGraph):
 
 	def add_component(self, v1, v2, *, voltage, resistance):
 		component = Component((v1,v2), voltage=voltage, resistance=resistance)
-		self.add_edge(v1,v2,component=component)
+		self.add_edge(v1,v2)
+		self.edge[v1][v2]['_component'] = component
 
 	def edge_component(self, e):
-		return self.edge_attribute(e, 'component')
+		s,t = e
+		return self.edge[s][t]['_component']
 
 	def path_total_voltage(self, path):
 		acc = 0.0
-		for e,source in _iter_path_with_sources(self, path):
-			acc += self.edge_component(e).voltage(source)
+		for source,target in vpath.edges(path):
+			acc += self.edge_component((source,target)).voltage(source)
 		return acc
 
 	def compute_currents(self, cyclebasis=None):
@@ -110,7 +115,7 @@ class Circuit(UndirectedGraph):
 		# We only compute a current for each cycle in the cycle basis.
 
 		if cyclebasis is None:
-			cyclebasis = self.cycle_basis()
+			cyclebasis = self._default_cycle_basis()
 
 		cycles_from_edge = self._generate_cycles_from_edge(cyclebasis)
 
@@ -124,6 +129,11 @@ class Circuit(UndirectedGraph):
 		edge_currents = self._compute_edge_currents(cycle_currents, cycles_from_edge)
 		return edge_currents
 
+	def _default_cycle_basis(self):
+		cyclebasis = nx.cycle_basis(self)
+		for cycle in cyclebasis:
+			cycle.append(cycle[0])
+		return cyclebasis
 
 	# For each edge, generate a list of (index, sign) for each cycle that crosses it.
 	# This is used to go back and forth between the cycle currents and the individual
@@ -132,9 +142,12 @@ class Circuit(UndirectedGraph):
 		cycles_from_edge = {e:[] for e in self.edges()}
 
 		for pathI, path in enumerate(cyclebasis):
-			for e, source in _iter_path_with_sources(self, path):
+			for e in vpath.edges(path):
+				source,target = e
 				sign = self.edge_component(e).direction_sign(source)
-				cycles_from_edge[e].append((pathI, sign))
+
+				ecycles = util.edictget(cycles_from_edge, e)
+				ecycles.append((pathI, sign))
 		return cycles_from_edge
 
 	def _generate_voltage_vector(self, cyclebasis):
@@ -148,7 +161,8 @@ class Circuit(UndirectedGraph):
 		for e in self.edges():
 			component = self.edge_component(e)
 			resistance = component.resistance()
-			ecycles = cycles_from_edge[e]
+
+			ecycles = util.edictget(cycles_from_edge, e)
 
 			# generate terms corresponding to this edge, which are +r between cycles that cross the
 			#  edge in the same direction, and -r between cycles that cross in opposite directions
@@ -163,10 +177,10 @@ class Circuit(UndirectedGraph):
 	def _compute_edge_currents(self, cycle_currents, cycles_from_edge):
 		edge_currents = {}
 		for e in self.edges():
-			edge_currents[e] = sum(cycle_currents[cycleId] * sign for cycleId, sign in cycles_from_edge[e])
+			ecycles = util.edictget(cycles_from_edge, e)
+			edge_currents[e] = sum(cycle_currents[cycleId] * sign for cycleId, sign in ecycles)
 
 		return edge_currents
-
 
 def _solve_sparse(mat,vec):
 	solver = spla.factorized(mat.tocsc())
@@ -175,7 +189,7 @@ def _solve_sparse(mat,vec):
 def test_two_separate_loops():
 	# A circuit with two connected components.
 	circuit = Circuit()
-	circuit.add_vertices(['a1', 'a2', 'a3', 'b1', 'b2', 'b3'])
+	circuit.add_nodes_from(['a1', 'a2', 'a3', 'b1', 'b2', 'b3'])
 	circuit.add_battery('a1', 'a2', 5.0)
 	circuit.add_resistor('a2', 'a3', 1.0)
 	circuit.add_resistor('a3', 'a1', 1.0)
@@ -188,14 +202,24 @@ def test_two_separate_loops():
 		assert(abs(v - 2.5) < 1E-10)
 
 def test_two_loop_circuit():
+	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
 	circuit = Circuit()
-	circuit.add_vertices(['top', 'bot', 'left', 'right'])
+	circuit.add_nodes_from(['top', 'bot', 'left', 'right'])
 	circuit.add_battery('bot', 'left',  28.0)
 	circuit.add_battery('bot', 'right',  7.0)
 	circuit.add_resistor('top', 'bot',   2.0)
 	circuit.add_resistor('top', 'left',  4.0)
 	circuit.add_resistor('top', 'right', 1.0)
-	print(circuit.compute_currents())
+	currents = circuit.compute_currents()
+
+	assertNear(util.edictget(currents, ('bot','left')),  +5.0)
+	assertNear(util.edictget(currents, ('bot','right')), -1.0)
+	assertNear(util.edictget(currents, ('top','bot')),   +4.0)
+	assertNear(util.edictget(currents, ('top','left')),  -5.0)
+	assertNear(util.edictget(currents, ('top','right')), +1.0)
+
+def assertNear(a,b,eps=1e-7):
+	assert abs(a-b) < eps
 
 def iterN(n, f, *a, **kw):
 	for _ in range(n):
@@ -204,5 +228,3 @@ def iterN(n, f, *a, **kw):
 test_two_separate_loops()
 test_two_loop_circuit()
 
-import cProfile
-#cProfile.run('iterN(100, randomtest)',sort='tottime')

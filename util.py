@@ -16,3 +16,5 @@ def assertRaises(cls, f, *args, **kw):
 		return
 	assert False
 
+def edictget(d, e):
+	return d[e[::-1] if e[::-1] in d else e]

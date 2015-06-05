@@ -24,6 +24,8 @@ import node_deletion
 
 import graphs.vertexpath as vpath
 
+import util
+
 # TODO: maybe implement subparsers for these, and put in the node_selection/deletion
 #   modules since these need to be updated for each new mode
 SELECTION_MODES = {
@@ -100,8 +102,8 @@ def run_trial_fpath(steps, path, selection_func, deletion_func, *, verbose=False
 	trial_info['filepath'] = path
 	return trial_info
 
-#def run_trial_nx(steps, g, selection_func, *, verbose=False):
-	#profile.runctx('run_trial_nx_(steps,g,selection_func,verbose=verbose)',locals(),globals(),sort='tot')
+#def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
+#	profile.runctx('run_trial_nx_(steps,g,selection_func,deletion_func,verbose=verbose)',locals(),globals(),sort='tot')
 
 def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 	if verbose:
@@ -189,19 +191,20 @@ def cyclebasis_planar_nx(g):
 
 	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
 
-def compute_current_nx(g, vertex_cyclebasis):
+def compute_current_nx(g, cyclebasis):
 	circuit = circuit_from_nx(g)
 
 	measure_s = g.graph[GATTR_MEASURE_SOURCE]
 	measure_t = g.graph[GATTR_MEASURE_TARGET]
 
-	measure_e = circuit.arbitrary_edge(measure_s, measure_t)
+	measure_e = (measure_s, measure_t)
 
-	edge_cyclebasis = [to_edge_path(circuit, cycle) for cycle in vertex_cyclebasis]
-	return compute_current(circuit, measure_e, edge_cyclebasis)
+	return compute_current(circuit, measure_e, cyclebasis)
 
-def compute_current(circuit, measured_edge, edge_cyclebasis):
-	return circuit.compute_currents(edge_cyclebasis)[measured_edge]
+def compute_current(circuit, measured_edge, cyclebasis):
+	# FIXME
+	currents = circuit.compute_currents(cyclebasis)
+	return util.edictget(currents, measured_edge)
 
 def read_graph(path):
 	g = nx.read_gpickle(path)
@@ -224,7 +227,7 @@ def graph_info_nx(g):
 
 def circuit_from_nx(g):
 	circuit = Circuit()
-	circuit.add_vertices(iter(g))
+	circuit.add_nodes_from(iter(g))
 	for (v1,v2) in g.edges():
 			eattr = g.edge[v1][v2]
 			s = eattr[EATTR_SOURCE]
