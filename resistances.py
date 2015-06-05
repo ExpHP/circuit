@@ -24,6 +24,16 @@ import node_deletion
 
 import graphs.vertexpath as vpath
 
+# TODO: maybe implement subparsers for these, and put in the node_selection/deletion
+#   modules since these need to be updated for each new mode
+SELECTION_MODES = {
+	'uniform':  node_selection.uniform(),
+	'bigholes': node_selection.by_deleted_neighbors([1,10**3,10**4,10**7]),
+}
+DELETION_MODES = {
+	'remove':   node_deletion.annihilation(),
+}
+
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
@@ -33,13 +43,13 @@ def main():
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
+	parser.add_argument('--selection-mode', '-S', type=str, required=True, choices=SELECTION_MODES, help='TODO')
+	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
 
 	args = parser.parse_args(sys.argv[1:])
 
-	#selector = node_selection.uniform()
-	selector = node_selection.by_deleted_neighbors([1,10**3,10**4,10**7])
-
-	deletor  = node_deletion.annihilation()
+	selector = SELECTION_MODES[args.selection_mode]
+	deletor = DELETION_MODES[args.deletion_mode]
 
 	f = lambda : run_trial_fpath(
 		steps = args.steps,
