@@ -4,6 +4,7 @@ from scipy import sparse
 import scipy.sparse.linalg as spla
 
 import graphs.vertexpath as vpath
+import graphs.planar_cycle_basis as planar_cycle_basis
 import networkx as nx
 
 from resistances_common import *
@@ -11,8 +12,9 @@ from resistances_common import *
 import util
 
 __all__ = [
-	'Circuit',
 	'CircuitBuilder',
+	'MeshCurrentSolver',
+	'validate_circuit',
 ]
 
 # produce a sign factor (+/- 1) based on which side we're traveling an
@@ -67,104 +69,190 @@ class CircuitBuilder():
 		nx.set_edge_attributes(copy, EATTR_VOLTAGE, voltage)
 		nx.set_edge_attributes(copy, EATTR_RESISTANCE, resistance)
 		nx.set_edge_attributes(copy, EATTR_SOURCE, sources)
-		return Circuit(copy)
+		assert validate_circuit(copy)
+		return copy
 
-class Circuit:
+# Function which more or less defines a `circuit`, as I'd rather not make a class.
+# returns True or throws an exception (the True return value is to permit its use
+#  in an assert statement)
+def validate_circuit(circuit):
+	# Check graph type...
+	if circuit.is_directed() or circuit.is_multigraph():
+		raise ValueError('Circuit must be an undirected non-multigraph (nx.Graph())')
 
-	def __init__(self, g):
-		if g.is_directed():
-			raise ValueError('Directed graphs not supported.')
-		if g.is_multigraph():
-			raise ValueError('Multigraphs not supported.')
-		self._g = g
+	# Check for missing attributes...
+	eattrs = (EATTR_VOLTAGE, EATTR_RESISTANCE, EATTR_SOURCE)
+	for name in eattrs:
+		d = nx.get_edge_attributes(circuit, name)
+		d.update({(t,s):val for ((s,t),val) in d.items()}) # have both directions for easy lookup
 
-	def edge_sign(self, s, t):
-		positive_source = self._g.edge[s][t][EATTR_SOURCE]
+		if any(e not in d for e in circuit.edges()):
+			raise ValueError('There are missing edge attributes.  All edges must define: {}'.format(expected_eattrs))
 
-		assert positive_source in (s,t)
-		return +1.0 if s == positive_source else -1.0
+	# Check for illegal attribute contents...
+	# The value of EATTR_SOURCE must be one of the edge's endpoints
+	if any(circuit.edge[s][t][EATTR_SOURCE] not in (s,t) for (s,t) in circuit.edges()):
+		raise ValiueError('An edge has an invalid "{}" attribute (it must equal one of the edge\'s endpoints)')
 
-	def path_total_voltage(self, path):
-		acc = 0.0
-		for s,t in vpath.edges(path):
-			acc += self.edge_sign(s,t) * self._g.edge[s][t][EATTR_VOLTAGE]
-		return acc
+	return True
 
-	def compute_currents(self, cyclebasis=None):
+def circuit_edge_sign(circuit, s, t):
+	positive_source = circuit.edge[s][t][EATTR_SOURCE]
+	assert positive_source in (s,t)
+	return +1.0 if s == positive_source else -1.0
 
-		# Currents are computed using mesh current analysis;
-		# We only compute a current for each cycle in the cycle basis.
+def circuit_path_voltage(circuit, path):
+	acc = 0.0
+	for s,t in vpath.edges(path):
+		acc += circuit_edge_sign(circuit,s,t) * circuit.edge[s][t][EATTR_VOLTAGE]
+	return acc
 
-		if cyclebasis is None:
-			cyclebasis = self._default_cycle_basis()
+#------------------------------------------------------------
 
-		cycles_from_edge = self._generate_cycles_from_edge(cyclebasis)
+# @provides(member_name):
+# Member function decorator for a function which caches its results in a member of
+#  the class.
 
-		# Generate matrices
-		V = self._generate_voltage_vector(cyclebasis)
-		R = self._generate_resistance_matrix(cyclebasis, cycles_from_edge)
+# To use properly, set the member to None to signal when it has become invalidated.
+# Whenever the stored value is needed, call the decorated function instead of accessing
+#  the member directly.
 
-		# Solve linear system
-		cycle_currents = _solve_sparse(R,V).reshape([len(cyclebasis)])
+# TODO: Look into better, more idiomatic solutions to the problem of cache invalidation;
+# This will clearly become unmaintainable very quickly.
+class provides:
+	def __init__(self, member):
+		self.member = member
 
-		edge_currents = self._compute_edge_currents(cycle_currents, cycles_from_edge)
-		return edge_currents
+	def __call__(self, func):
 
-	def _default_cycle_basis(self):
-		cyclebasis = nx.cycle_basis(self._g)
-		for cycle in cyclebasis:
-			cycle.append(cycle[0])
-		return cyclebasis
+		def wrapped(obj, *a, **kw):
+			if getattr(obj, self.member) is None:
+				setattr(obj, self.member, func(obj, *a, **kw))
 
-	# For each edge, generate a list of (index, sign) for each cycle that crosses it.
-	# This is used to go back and forth between the cycle currents and the individual
-	#  edge currents.
-	def _generate_cycles_from_edge(self, cyclebasis):
-		cycles_from_edge = {e:[] for e in self._g.edges()}
+			assert getattr(obj, self.member) is not None
+			return getattr(obj, self.member)
 
-		for pathI, path in enumerate(cyclebasis):
-			for e in vpath.edges(path):
-				sign = self.edge_sign(*e)
+		return wrapped
 
-				ecycles = util.edictget(cycles_from_edge, e)
-				ecycles.append((pathI, sign))
-		return cycles_from_edge
 
-	def _generate_voltage_vector(self, cyclebasis):
-		return np.array([self.path_total_voltage(path) for path in cyclebasis])
+class MeshCurrentSolver:
 
-	def _generate_resistance_matrix(self, cyclebasis, cycles_from_edge):
-		# Build components of resistance matrix, in coo (COOrdinate format) sparse format
-		R_vals = []
-		R_rows = []
-		R_cols = []
-		for e in self._g.edges():
-			s,t = e
-			resistance = self._g.edge[s][t][EATTR_RESISTANCE]
+	def __init__(self, circuit, cyclebasis=None, is_planar=False):
+		validate_circuit(circuit)
+
+		self._g = circuit
+		self._is_planar = is_planar
+
+		# Invalidate everything
+		self._cycle_basis      = cyclebasis
+		self._cycles_from_edge = None
+		self._cycle_currents   = None
+
+	def delete_node(self, v):
+		self._g.remove_node(v)
+
+		# Update what we can
+		if self._is_planar and self._cycle_basis is not None:
+			self._cycle_basis      = planar_cycle_basis.without_vertex(self._cycle_basis, v)
+			self._cycles_from_edge = None
+			self._cycle_currents   = None
+		else:
+			self._cycle_basis      = None
+			self._cycles_from_edge = None
+			self._cycle_currents   = None
+
+		assert len(self._cycle_basis) == len(nx.cycle_basis(self._g))
+
+	@provides('_cycle_basis')
+	def _acquire_cycle_basis(self):
+		if self._is_planar:
+			return compute_planar_cycle_basis(self._g)
+		else:
+			return compute_default_cycle_basis(self._g)
+		assert False
+
+	@provides('_cycles_from_edge')
+	def _acquire_cycles_from_edge(self):
+		g = self._g
+		cyclebasis = self._acquire_cycle_basis()
+
+		return compute_cycles_from_edge(g, cyclebasis)
+
+	@provides('_cycle_currents')
+	def _acquire_cycle_currents(self):
+		g = self._g
+		cyclebasis = self._acquire_cycle_basis()
+		cycles_from_edge = self._acquire_cycles_from_edge()
+
+		V = compute_voltage_vector(g, cyclebasis)
+		R = compute_resistance_matrix(g, cyclebasis, cycles_from_edge)
+
+		return compute_cycle_currents(R, V, cyclebasis)
+
+	def get_current(self, s, t):
+		g = self._g
+		cycles_from_edge = self._acquire_cycles_from_edge()
+		cycle_currents = self._acquire_cycle_currents()
+
+		ecycles = util.edictget(cycles_from_edge, (s,t))
+		return circuit_edge_sign(g,s,t) * sum(cycle_currents[cycleId] * sign for cycleId, sign in ecycles)
+
+#------------------------------------------------------------
+
+# Don't make these member functions;
+# They are laid out below as free functions to explicitly spell out all of the
+#  data dependencies
+
+def compute_planar_cycle_basis(g):
+	xs,ys = nx.get_node_attributes(g, VATTR_X), nx.get_node_attributes(g, VATTR_Y)
+	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
+
+def compute_default_cycle_basis(g):
+	cyclebasis = nx.cycle_basis(g)
+	for cycle in cyclebasis:
+		cycle.append(cycle[0])
+	return cyclebasis
+
+def compute_cycles_from_edge(g, cyclebasis):
+	cycles_from_edge = {e:[] for e in g.edges()}
+
+	for pathI, path in enumerate(cyclebasis):
+		for e in vpath.edges(path):
+			sign = circuit_edge_sign(g, *e)
 
 			ecycles = util.edictget(cycles_from_edge, e)
+			ecycles.append((pathI, sign))
+	return cycles_from_edge
 
-			# generate terms corresponding to this edge, which are +r between cycles that cross the
-			#  edge in the same direction, and -r between cycles that cross in opposite directions
-			for (row, row_sign) in ecycles:
-				R_rows.extend([row]*len(ecycles))
-				R_cols.extend([col for (col,_) in ecycles])
-				R_vals.extend([row_sign * col_sign * resistance for (_,col_sign) in ecycles])
-				assert len(R_vals) == len(R_rows) == len(R_cols)
+def compute_voltage_vector(g, cyclebasis):
+	return np.array([circuit_path_voltage(g, path) for path in cyclebasis])
 
-		return sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
+def compute_resistance_matrix(g, cyclebasis, cycles_from_edge):
+	# Build components of resistance matrix, in coo (COOrdinate format) sparse format
+	R_vals = []
+	R_rows = []
+	R_cols = []
+	for e in g.edges():
+		s,t = e
+		resistance = g.edge[s][t][EATTR_RESISTANCE]
 
-	def _compute_edge_currents(self, cycle_currents, cycles_from_edge):
-		edge_currents = {}
-		for e in self._g.edges():
-			ecycles = util.edictget(cycles_from_edge, e)
-			edge_currents[e] = sum(cycle_currents[cycleId] * sign for cycleId, sign in ecycles)
+		ecycles = util.edictget(cycles_from_edge, e)
 
-		return edge_currents
+		# generate terms corresponding to this edge, which are +r between cycles that cross the
+		#  edge in the same direction, and -r between cycles that cross in opposite directions
+		for (row, row_sign) in ecycles:
+			R_rows.extend([row]*len(ecycles))
+			R_cols.extend([col for (col,_) in ecycles])
+			R_vals.extend([row_sign * col_sign * resistance for (_,col_sign) in ecycles])
+			assert len(R_vals) == len(R_rows) == len(R_cols)
 
-def _solve_sparse(mat,vec):
-	solver = spla.factorized(mat.tocsc())
-	return solver(vec)
+	return sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
+
+def compute_cycle_currents(r_mat, v_vec, cyclebasis):
+	solver = spla.factorized(r_mat.tocsc())
+	return solver(v_vec).reshape([len(cyclebasis)])
+
+#------------------------------------------------------------
 
 def _copy_graph_without_attributes(g):
 	cls = type(g)
@@ -186,10 +274,10 @@ def test_two_separate_loops():
 	builder.make_resistor('y', 'z', 1.0)
 	builder.make_resistor('z', 'x', 1.0)
 	circuit = builder.build()
+	solver = MeshCurrentSolver(circuit, is_planar=False)
 
-	currents = circuit.compute_currents()
 	for s,t in ('ab', 'bc', 'ca', 'xy', 'yz', 'zx'):
-		assertNear(util.edictget(currents, (s,t)), +2.5)
+		assertNear(solver.get_current(s,t), +2.5)
 
 def test_two_loop_circuit():
 	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
@@ -203,14 +291,13 @@ def test_two_loop_circuit():
 	builder.make_resistor('Up', 'Lt', 4.0)
 	builder.make_resistor('Up', 'Rt', 1.0)
 	circuit = builder.build()
+	solver = MeshCurrentSolver(circuit, is_planar=False)
 
-	currents = circuit.compute_currents()
-
-	assertNear(util.edictget(currents, ('Dn','Lt')), +5.0)
-	assertNear(util.edictget(currents, ('Dn','Rt')), -1.0)
-	assertNear(util.edictget(currents, ('Up','Dn')), +4.0)
-	assertNear(util.edictget(currents, ('Up','Lt')), -5.0)
-	assertNear(util.edictget(currents, ('Up','Rt')), +1.0)
+	assertNear(solver.get_current('Dn','Lt'), +5.0)
+	assertNear(solver.get_current('Dn','Rt'), -1.0)
+	assertNear(solver.get_current('Up','Dn'), +4.0)
+	assertNear(solver.get_current('Up','Lt'), -5.0)
+	assertNear(solver.get_current('Up','Rt'), +1.0)
 
 def assertNear(a,b,eps=1e-7):
 	assert abs(a-b) < eps

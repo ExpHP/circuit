@@ -15,7 +15,7 @@ import json
 from multiprocessing import Pool
 import multiprocessing_dill
 
-from circuit import Circuit, CircuitBuilder
+from circuit import MeshCurrentSolver, CircuitBuilder
 import graphs.planar_cycle_basis as planar_cycle_basis
 from resistances_common import *
 
@@ -116,8 +116,9 @@ def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
-	choices    = get_deletable_nodes(g)
-	cyclebasis = cyclebasis_planar_nx(g)
+	measured_edge = get_measured_edge(g)
+	choices = get_deletable_nodes(g)
+	solver  = MeshCurrentSolver(g, cyclebasis_planar_nx(g), is_planar=True)
 
 	past_selections = []
 
@@ -126,11 +127,11 @@ def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 		t = time.time()
 
 		# the big heavy calculation!
-		current = compute_current_nx(g, cyclebasis)
+		current = solver.get_current(*measured_edge)
 
 		# introduce a defect
 		vdeleted = selection_func(choices, initial_g, past_selections)
-		g, cyclebasis = deletion_func(g, cyclebasis, vdeleted)
+		deletion_func(solver, vdeleted)
 
 		past_selections.append(vdeleted)
 		choices.remove(vdeleted)
@@ -191,27 +192,17 @@ def cyclebasis_planar_nx(g):
 
 	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
 
-def compute_current_nx(g, cyclebasis):
-	circuit = circuit_from_nx(g)
-
-	measure_s = g.graph[GATTR_MEASURE_SOURCE]
-	measure_t = g.graph[GATTR_MEASURE_TARGET]
-
-	measure_e = (measure_s, measure_t)
-
-	return compute_current(circuit, measure_e, cyclebasis)
-
-def compute_current(circuit, measured_edge, cyclebasis):
-	# FIXME
-	currents = circuit.compute_currents(cyclebasis)
-	return util.edictget(currents, measured_edge)
-
 def read_graph(path):
 	g = nx.read_gpickle(path)
 	return g
 
 def get_deletable_nodes(g):
 	return set(v for v in g if g.node[v][VATTR_REMOVABLE])
+
+def get_measured_edge(g):
+	measure_s = g.graph[GATTR_MEASURE_SOURCE]
+	measure_t = g.graph[GATTR_MEASURE_TARGET]
+	return (measure_s, measure_t)
 
 def graph_info_circuit(circuit):
 	return {
