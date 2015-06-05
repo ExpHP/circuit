@@ -15,7 +15,7 @@ import json
 from multiprocessing import Pool
 import multiprocessing_dill
 
-from circuit import Circuit
+from circuit import Circuit, CircuitBuilder
 import graphs.planar_cycle_basis as planar_cycle_basis
 from resistances_common import *
 
@@ -226,18 +226,21 @@ def graph_info_nx(g):
 	}
 
 def circuit_from_nx(g):
-	circuit = Circuit()
-	circuit.add_nodes_from(iter(g))
+	# FIXME using builder here is convoluted
+	# FIXME in fact if you think about it this function doesn't actually
+	#       accomplish anything now
+	# FIXME also clarify what the EATTR/etc constants are really for
+	builder = CircuitBuilder(g)
 	for (v1,v2) in g.edges():
 			eattr = g.edge[v1][v2]
 			s = eattr[EATTR_SOURCE]
 			t = other_endpoint_nx((v1,v2), s)
 
-			circuit.add_component(s, t,
+			builder.make_component(s, t,
 				resistance = eattr[EATTR_RESISTANCE],
 				voltage = eattr[EATTR_VOLTAGE],
 			)
-	return circuit
+	return builder.build()
 
 def other_endpoint_nx(e, s):
 	(v1,v2) = e

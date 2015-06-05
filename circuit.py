@@ -6,10 +6,13 @@ import scipy.sparse.linalg as spla
 import graphs.vertexpath as vpath
 import networkx as nx
 
+from resistances_common import *
+
 import util
 
 __all__ = [
 	'Circuit',
+	'CircuitBuilder',
 ]
 
 # produce a sign factor (+/- 1) based on which side we're traveling an
@@ -21,92 +24,70 @@ def _sign_from_source_vertex(endpoints, source):
 	if source == t: return -1.0
 	raise ValueError('source not in endpoints')
 
-# TODO: this ought not to be necessary; a path should be a class object
-#       that is capable of producing this information on its own.
-# (this hackish workaround won't even work in some cases; the edge list
-#  data structure does not allow one to identify the (sole) vertex of a
-#  0 edge path, or to identify the direction of a 1 edge path in an
-#  undirected graph)
-# (it also can't determine the correct order of a 2-cycle in an undirected
-#  graph, but I'll let that slide)
-def _vertices_from_path(g, edgelist):
-	if len(edgelist) < 2: raise RuntimeError('This edge list is too short '
-		'for its vertices to properly be determined.  Tell the developer '
-		'to stop being lazy and implement a proper Path class already!')
+# For producing hardcoded circuits.
+class CircuitBuilder():
+	_DEFAULT_VOLTAGE    = 0.0
+	_DEFAULT_RESISTANCE = 0.0
 
-	s1,t1 = g.edge_endpoints(edgelist[0])
-	s2,t2 = g.edge_endpoints(edgelist[1])
+	def __init__(self, g):
+		self._g = _copy_graph_without_attributes(g)
 
-	# HACK: Identify the SECOND vertex as the one shared by the first two edges;
-	#  the other vertex must be the first one in the path.
-	if   t1 in (s2,t2): first = s1
-	elif s1 in (s2,t2): first = t1
-	else: raise RuntimeError('Path invalid (neither vertex of first edge is in second edge)')
+	# adds an edge or turns an existing edge into a battery (has a potential
+	#  difference of +voltage from s to t, and 0 resistance)
+	def make_battery(self, s, t, voltage):
+		self.make_component(s, t, voltage=voltage)
 
-	vs = [first]
-	for edge in edgelist:
-		vs.append(g.edge_target_given_source(edge, vs[-1]))
+	def make_resistor(self, s, t, resistance):
+		self.make_component(s, t, resistance=resistance)
 
-	assert len(vs) == len(edgelist) + 1
+	# makes any sort of circuit component
+	def make_component(self, s, t, *, resistance=0.0, voltage=0.0):
+		g = self._g
+		if not g.has_edge(s,t):
+			g.add_edge(s,t)
+		g.edge[s][t]['_voltage']    = voltage
+		g.edge[s][t]['_resistance'] = resistance
+		g.edge[s][t]['_source']     = s
 
-	return vs
+	def build(self):
+		g = self._g
+		voltage    = nx.get_edge_attributes(g, '_voltage')
+		resistance = nx.get_edge_attributes(g, '_resistance')
+		sources    = nx.get_edge_attributes(g, '_source')
 
-# the primary purpose of _vertices_from_path (yield (edge, source) pairs so that we
-#  can determine the direction of edges as we iterate over them)
-def _iter_path_with_sources(g, edgelist):
-	vs = _vertices_from_path(g, edgelist)
-	return iter(zip(edgelist, vs[:-1]))
+		assert set(voltage) == set(resistance) == set(sources)
 
-# An electrical component which rests on a graph edge.
-class Component:
-	# Create a component given a (source, target) tuple specifying its positive direction.
-	def __init__(self, endpoints, *, voltage=0.0, resistance=0.0):
-		self._endpoints = endpoints
-		self._potential = voltage
-		self._resistance = resistance
+		missing_edges = [e for e in g.edges() if (e not in voltage) and (e[::-1] not in voltage)]
+		for e in missing_edges:
+			voltage[e]     = self._DEFAULT_VOLTAGE
+			resistances[e] = self._DEFAULT_RESISTANCE
+			sources[e]     = e[0]
 
-	@classmethod
-	def make_battery(cls, endpoints, voltage):
-		obj = cls()
-		obj._potential = voltage
-		return obj
+		copy = _copy_graph_without_attributes(g)
+		nx.set_edge_attributes(copy, EATTR_VOLTAGE, voltage)
+		nx.set_edge_attributes(copy, EATTR_RESISTANCE, resistance)
+		nx.set_edge_attributes(copy, EATTR_SOURCE, sources)
+		return Circuit(copy)
 
-	@classmethod
-	def make_resistor(cls, endpoints, resistance):
-		obj = cls()
-		obj._resistance = resistance
-		return obj
+class Circuit:
 
-	def direction_sign(self, sourceVertex):
-		return _sign_from_source_vertex(self._endpoints, sourceVertex)
+	def __init__(self, g):
+		if g.is_directed():
+			raise ValueError('Directed graphs not supported.')
+		if g.is_multigraph():
+			raise ValueError('Multigraphs not supported.')
+		self._g = g
 
-	def resistance(self):
-		return self._resistance
+	def edge_sign(self, s, t):
+		positive_source = self._g.edge[s][t][EATTR_SOURCE]
 
-	def voltage(self, sourceVertex):
-		return self.direction_sign(sourceVertex) * self._potential
-
-
-class Circuit(nx.Graph):
-	def add_resistor(self, v1, v2, resistance):
-		self.add_component(v1,v2, resistance=resistance, voltage=0.0)
-
-	def add_battery(self, v1, v2, voltage):
-		self.add_component(v1,v2, voltage=voltage, resistance=0.0)
-
-	def add_component(self, v1, v2, *, voltage, resistance):
-		component = Component((v1,v2), voltage=voltage, resistance=resistance)
-		self.add_edge(v1,v2)
-		self.edge[v1][v2]['_component'] = component
-
-	def edge_component(self, e):
-		s,t = e
-		return self.edge[s][t]['_component']
+		assert positive_source in (s,t)
+		return +1.0 if s == positive_source else -1.0
 
 	def path_total_voltage(self, path):
 		acc = 0.0
-		for source,target in vpath.edges(path):
-			acc += self.edge_component((source,target)).voltage(source)
+		for s,t in vpath.edges(path):
+			acc += self.edge_sign(s,t) * self._g.edge[s][t][EATTR_VOLTAGE]
 		return acc
 
 	def compute_currents(self, cyclebasis=None):
@@ -130,7 +111,7 @@ class Circuit(nx.Graph):
 		return edge_currents
 
 	def _default_cycle_basis(self):
-		cyclebasis = nx.cycle_basis(self)
+		cyclebasis = nx.cycle_basis(self._g)
 		for cycle in cyclebasis:
 			cycle.append(cycle[0])
 		return cyclebasis
@@ -139,12 +120,11 @@ class Circuit(nx.Graph):
 	# This is used to go back and forth between the cycle currents and the individual
 	#  edge currents.
 	def _generate_cycles_from_edge(self, cyclebasis):
-		cycles_from_edge = {e:[] for e in self.edges()}
+		cycles_from_edge = {e:[] for e in self._g.edges()}
 
 		for pathI, path in enumerate(cyclebasis):
 			for e in vpath.edges(path):
-				source,target = e
-				sign = self.edge_component(e).direction_sign(source)
+				sign = self.edge_sign(*e)
 
 				ecycles = util.edictget(cycles_from_edge, e)
 				ecycles.append((pathI, sign))
@@ -158,9 +138,9 @@ class Circuit(nx.Graph):
 		R_vals = []
 		R_rows = []
 		R_cols = []
-		for e in self.edges():
-			component = self.edge_component(e)
-			resistance = component.resistance()
+		for e in self._g.edges():
+			s,t = e
+			resistance = self._g.edge[s][t][EATTR_RESISTANCE]
 
 			ecycles = util.edictget(cycles_from_edge, e)
 
@@ -176,7 +156,7 @@ class Circuit(nx.Graph):
 
 	def _compute_edge_currents(self, cycle_currents, cycles_from_edge):
 		edge_currents = {}
-		for e in self.edges():
+		for e in self._g.edges():
 			ecycles = util.edictget(cycles_from_edge, e)
 			edge_currents[e] = sum(cycle_currents[cycleId] * sign for cycleId, sign in ecycles)
 
@@ -186,37 +166,51 @@ def _solve_sparse(mat,vec):
 	solver = spla.factorized(mat.tocsc())
 	return solver(vec)
 
+def _copy_graph_without_attributes(g):
+	cls = type(g)
+	result = cls()
+	result.add_nodes_from(g)
+	result.add_edges_from(g.edges())
+	return result
+
 def test_two_separate_loops():
 	# A circuit with two connected components.
-	circuit = Circuit()
-	circuit.add_nodes_from(['a1', 'a2', 'a3', 'b1', 'b2', 'b3'])
-	circuit.add_battery('a1', 'a2', 5.0)
-	circuit.add_resistor('a2', 'a3', 1.0)
-	circuit.add_resistor('a3', 'a1', 1.0)
-	circuit.add_battery('b1', 'b2', 5.0)
-	circuit.add_resistor('b2', 'b3', 1.0)
-	circuit.add_resistor('b3', 'b1', 1.0)
+	g = nx.Graph()
+	g.add_path('abca')
+	g.add_path('xyzx')
+	builder = CircuitBuilder(g)
+	builder.make_battery('a', 'b', 5.0)
+	builder.make_resistor('b', 'c', 1.0)
+	builder.make_resistor('c', 'a', 1.0)
+	builder.make_battery('x', 'y', 5.0)
+	builder.make_resistor('y', 'z', 1.0)
+	builder.make_resistor('z', 'x', 1.0)
+	circuit = builder.build()
 
-	current = circuit.compute_currents()
-	for v in current.values():
-		assert(abs(v - 2.5) < 1E-10)
+	currents = circuit.compute_currents()
+	for s,t in ('ab', 'bc', 'ca', 'xy', 'yz', 'zx'):
+		assertNear(util.edictget(currents, (s,t)), +2.5)
 
 def test_two_loop_circuit():
 	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
-	circuit = Circuit()
-	circuit.add_nodes_from(['top', 'bot', 'left', 'right'])
-	circuit.add_battery('bot', 'left',  28.0)
-	circuit.add_battery('bot', 'right',  7.0)
-	circuit.add_resistor('top', 'bot',   2.0)
-	circuit.add_resistor('top', 'left',  4.0)
-	circuit.add_resistor('top', 'right', 1.0)
+	g = nx.Graph()
+	g.add_path(['Up','Rt','Dn','Lt','Up'])
+	g.add_edge('Dn','Up')
+	builder = CircuitBuilder(g)
+	builder.make_battery('Dn', 'Lt', 28.0)
+	builder.make_battery('Dn', 'Rt',  7.0)
+	builder.make_resistor('Up', 'Dn', 2.0)
+	builder.make_resistor('Up', 'Lt', 4.0)
+	builder.make_resistor('Up', 'Rt', 1.0)
+	circuit = builder.build()
+
 	currents = circuit.compute_currents()
 
-	assertNear(util.edictget(currents, ('bot','left')),  +5.0)
-	assertNear(util.edictget(currents, ('bot','right')), -1.0)
-	assertNear(util.edictget(currents, ('top','bot')),   +4.0)
-	assertNear(util.edictget(currents, ('top','left')),  -5.0)
-	assertNear(util.edictget(currents, ('top','right')), +1.0)
+	assertNear(util.edictget(currents, ('Dn','Lt')), +5.0)
+	assertNear(util.edictget(currents, ('Dn','Rt')), -1.0)
+	assertNear(util.edictget(currents, ('Up','Dn')), +4.0)
+	assertNear(util.edictget(currents, ('Up','Lt')), -5.0)
+	assertNear(util.edictget(currents, ('Up','Rt')), +1.0)
 
 def assertNear(a,b,eps=1e-7):
 	assert abs(a-b) < eps
