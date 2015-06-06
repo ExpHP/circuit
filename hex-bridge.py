@@ -38,12 +38,90 @@ from resistances_common import *
 #  *-*-*-*-*-*-*
 #
 
-parser = argparse.ArgumentParser()
-parser.add_argument('rows', metavar='LENGTH', type=int)
-parser.add_argument('cols', metavar='WIDTH', type=int)
-parser.add_argument('--output', '-o', type=str, required=True, help='.gml or .gml.gz output file')
+# FIXME: this whole file is a mess
 
-args = parser.parse_args(sys.argv[1:])
+def main(argv):
+	parser = argparse.ArgumentParser()
+	parser.add_argument('rows', metavar='LENGTH', type=int)
+	parser.add_argument('cols', metavar='WIDTH', type=int)
+	parser.add_argument('--output', '-o', type=str, required=True, help='.gpickle output file')
+
+	args = parser.parse_args(argv[1:])
+
+	values = make_circuit(args.rows, args.cols)
+	save_circuit(args.output, *values)
+
+
+def make_circuit(cellrows, cellcols):
+	nrows,ncols = hex_grid_dims(cellrows,cellcols)
+
+	# Grid nodes
+	gridvs = [[grid_label(row,col) for col in range(ncols)] for row in range(nrows)]
+
+	gridxs, gridys = hex_grid_xy_arrays(cellrows,cellcols)
+	xs = {v: x for v,x in zip(flat_iter(gridvs), gridxs.flat)}
+	ys = {v: y for v,y in zip(flat_iter(gridvs), gridys.flat)}
+
+	# Connector nodes
+	topv = 'top'
+	xs[topv] = -2.0
+	ys[topv] = max(gridys.flat) + 1.0
+
+	botv = 'bot'
+	xs[botv] = -2.0
+	ys[botv] = -1.0
+
+	# Circuit object
+	g = hex_bridge_grid_circuit(gridvs)
+
+	g.add_nodes_from([topv, botv])
+
+	# Link top/bot with battery
+	add_battery(g, botv, topv, 1.0)
+
+	#----------------
+	# connect top/bot to nodes in graph
+	# due to zigzag pattern this is not entirely straightforward
+
+	# first column for "true" top/bottom rows
+	botstart = 1
+	topstart = (nrows+1) % 2
+
+	# doublecheck
+	assert gridys[0][botstart]  < gridys[0][1-botstart]
+	assert gridys[-1][topstart] > gridys[-1][1-topstart]
+
+	for v in gridvs[0][botstart::2]:
+		add_wire(g,v,botv)
+
+	for v in gridvs[-1][topstart::2]:
+		add_wire(g,v,topv)
+
+	deletable = {v: True for v in g}
+	deletable[topv] = False
+	deletable[botv] = False
+
+	measure_edge = (botv, topv)
+
+	return g, xs, ys, deletable, measure_edge
+
+def save_circuit(path, g, xs, ys, deletable, measure_edge):
+	# remove e.g. numpy type information from floats
+	xs = {v:float(x) for v,x in xs.items()}
+	ys = {v:float(x) for v,x in ys.items()}
+
+	nx.set_node_attributes(g, VATTR_X, xs)
+	nx.set_node_attributes(g, VATTR_Y, ys)
+	nx.set_node_attributes(g, VATTR_REMOVABLE, deletable)
+
+	# set edge that will have its current measured
+	s,t = measure_edge
+	g.graph[GATTR_MEASURE_SOURCE] = s
+	g.graph[GATTR_MEASURE_TARGET] = t
+
+	validate_graph_attributes(g)
+
+	nx.write_gpickle(g, path)
 
 # Total number of rows/cols of vertices
 def hex_grid_dims(cellrows, cellcols):
@@ -109,7 +187,7 @@ def add_wire(g, s, t):
 
 def add_resistor(g, s, t, resistance):
 	add_wire(g,s,t)
-	g.edge[s][t][EATTR_RESISTANCE] = 1.0
+	g.edge[s][t][EATTR_RESISTANCE] = resistance
 
 def add_battery(g, s, t, voltage):
 	add_wire(g,s,t)
@@ -135,70 +213,5 @@ def validate_graph_attributes(g):
 		if len(diff) != 0:
 			raise RuntimeError('edge attributes {} are set on some edges but not others'.format(diff))
 
-cellrows = args.rows
-cellcols = args.cols
-
-nrows,ncols = hex_grid_dims(cellrows,cellcols)
-
-# Grid nodes
-gridvs = [[grid_label(row,col) for col in range(ncols)] for row in range(nrows)]
-
-gridxs, gridys = hex_grid_xy_arrays(cellrows,cellcols)
-xs = {v: x for v,x in zip(flat_iter(gridvs), gridxs.flat)}
-ys = {v: y for v,y in zip(flat_iter(gridvs), gridys.flat)}
-
-# Connector nodes
-topv = 'top'
-xs[topv] = -2.0
-ys[topv] = max(gridys.flat) + 1.0
-
-botv = 'bot'
-xs[botv] = -2.0
-ys[botv] = -1.0
-
-# Circuit object
-g = hex_bridge_grid_circuit(gridvs)
-
-g.add_nodes_from([topv, botv])
-
-# Link top/bot with battery
-add_battery(g, botv, topv, 1.0)
-
-#----------------
-# connect top/bot to nodes in graph
-# due to zigzag pattern this is not entirely straightforward
-
-# first column for "true" top/bottom rows
-botstart = 1
-topstart = (nrows+1) % 2
-
-# doublecheck
-assert gridys[0][botstart]  < gridys[0][1-botstart]
-assert gridys[-1][topstart] > gridys[-1][1-topstart]
-
-for v in gridvs[0][botstart::2]:
-	add_wire(g,v,botv)
-
-for v in gridvs[-1][topstart::2]:
-	add_wire(g,v,topv)
-
-deletable = {v: True for v in g}
-deletable[topv] = False
-deletable[botv] = False
-
-# remove numpy type information from floats
-xs = {v:float(x) for v,x in xs.items()}
-ys = {v:float(x) for v,x in ys.items()}
-
-nx.set_node_attributes(g, VATTR_X, xs)
-nx.set_node_attributes(g, VATTR_Y, ys)
-nx.set_node_attributes(g, VATTR_REMOVABLE, deletable)
-
-# set edge that will have its current measured
-g.graph[GATTR_MEASURE_SOURCE] = botv
-g.graph[GATTR_MEASURE_TARGET] = topv
-
-validate_graph_attributes(g)
-
-nx.write_gpickle(g, args.output)
-
+if __name__ == '__main__':
+	main(list(sys.argv))
