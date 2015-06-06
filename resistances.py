@@ -56,6 +56,11 @@ def main():
 		print('In other words: No multiprocess profiling!',file=sys.stderr)
 		sys.exit(1)
 
+	# save the user some grief; fail early if output paths are not writable
+	for path in (args.output_json, args.output_pstats):
+		if path is not None:
+			error_if_not_writable(path)
+
 	selector = SELECTION_MODES[args.selection_mode]
 	deletor = DELETION_MODES[args.deletion_mode]
 
@@ -95,6 +100,16 @@ def main():
 		with open(args.output_json, 'w') as f:
 			f.write(s)
 
+# NOTE unintentional side-effect: creates an empty file if nothing exists
+def error_if_not_writable(path):
+	try:
+		with open(path, 'a') as f:
+			pass
+	except IOError as e:
+		print("Error: Could not verify '{}' as writable:".format(path), file=sys.stderr)
+		print(str(e), file=sys.stderr)
+		sys.exit(1)
+
 #	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
 #	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
 
@@ -127,7 +142,7 @@ def wrap_with_profiling(pstatsfile, f):
 		try:
 			p.dump_stats(pstatsfile)
 		except IOError as e: # not worth losing our return value over
-			print('Warning: could not write pstats. ({})'.format(str(e)), file=stderr)
+			print('Warning: could not write pstats. ({})'.format(str(e)), file=sys.stderr)
 
 		return result
 	return wrapped
