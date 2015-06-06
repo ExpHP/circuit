@@ -45,21 +45,36 @@ def main():
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
+	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
 	parser.add_argument('--selection-mode', '-S', type=str, required=True, choices=SELECTION_MODES, help='TODO')
 	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
 
 	args = parser.parse_args(sys.argv[1:])
 
+	if (args.output_pstats is not None and args.jobs != 1):
+		print('error: --output-pstats/-P is limited to --jobs 1',file=sys.stderr)
+		print('In other words: No multiprocess profiling!',file=sys.stderr)
+		sys.exit(1)
+
 	selector = SELECTION_MODES[args.selection_mode]
 	deletor = DELETION_MODES[args.deletion_mode]
 
-	f = lambda : run_trial_fpath(
+	cmd_once = lambda : run_trial_fpath(
 		steps = args.steps,
-		path = args.input,
+		graphpath = args.input,
 		selection_func = selector.selection_func,
 		deletion_func  = deletor.deletion_func,
 		verbose = args.verbose,
 	)
+
+	if args.jobs == 1:
+		cmd_all = lambda: run_sequential(cmd_once, times=args.trials)
+	else:
+		cmd_all = lambda: run_parallel(cmd_once, threads=args.jobs, times=args.trials)
+
+	if args.output_pstats is not None:
+		assert args.jobs == 1
+		cmd_all = wrap_with_profiling(args.output_pstats, cmd_all)
 
 	info = {}
 
@@ -67,13 +82,13 @@ def main():
 	info['defect_mode'] = deletor.info()
 
 	info['process_count'] = args.jobs
+	info['profiling_enabled'] = (args.output_pstats is not None)
 
 	info['time_started'] = int(time.time())
-	if args.jobs == 1:
-		info['trials'] = [f() for _ in range(args.trials)]
-	else:
-		info['trials'] = run_parallel(f, threads=args.jobs, times=args.trials)
+	info['trials'] = cmd_all() # do eeeet
 	info['time_finished'] = int(time.time())
+
+	assert isinstance(info['trials'], list)
 
 	if args.output_json is not None:
 		s = json.dumps(info)
@@ -83,10 +98,12 @@ def main():
 #	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
 #	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
 
-# Runs a nullary function the specified number of times and collects the results into an array.
-# Each process will be given a unique random seed
+def run_sequential(f,*,times):
+	return [f() for _ in range(times)]
+
 def run_parallel(f,*,threads,times):
 
+	# Give each trial a unique seed
 	baseseed = time.time()
 	seeds = [baseseed + i for i in range(times)]
 
@@ -97,13 +114,23 @@ def run_parallel(f,*,threads,times):
 	p = Pool(threads)
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-def run_trial_fpath(steps, path, selection_func, deletion_func, *, verbose=False):
-	trial_info = run_trial_nx(steps, read_graph(path), selection_func, deletion_func, verbose=verbose)
-	trial_info['filepath'] = path
-	return trial_info
+def run_trial_fpath(steps, graphpath, selection_func, deletion_func, *, verbose=False):
+	return run_trial_nx(steps, read_graph(graphpath), selection_func, deletion_func, verbose=verbose)
 
-#def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
-#	profile.runctx('run_trial_nx_(steps,g,selection_func,deletion_func,verbose=verbose)',locals(),globals(),sort='tot')
+def wrap_with_profiling(pstatsfile, f):
+	def wrapped(*args, **kwargs):
+		p = profile.Profile()
+		p.enable()
+		result = f(*args, **kwargs)
+		p.disable()
+
+		try:
+			p.dump_stats(pstatsfile)
+		except IOError as e: # not worth losing our return value over
+			print('Warning: could not write pstats. ({})'.format(str(e)), file=stderr)
+
+		return result
+	return wrapped
 
 def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 	if verbose:
