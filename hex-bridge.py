@@ -119,7 +119,7 @@ def save_circuit(path, g, xs, ys, deletable, measure_edge):
 	g.graph[GATTR_MEASURE_SOURCE] = s
 	g.graph[GATTR_MEASURE_TARGET] = t
 
-	validate_graph_attributes(g)
+	assert validate_graph_attributes(g)
 
 	nx.write_gpickle(g, path)
 
@@ -151,12 +151,6 @@ def grid_label(row,col):
 def flat_iter(lst):
 	for item in lst:
 		yield from item
-
-# a flattened iterator over the results of calling a function f
-#  (which produces an iterable) on each element of an iterable.
-def flat_map(f, lst):
-	for item in lst:
-		yield from f(item)
 
 def hex_bridge_grid_circuit(gridvs):
 	g = nx.Graph()
@@ -193,25 +187,26 @@ def add_battery(g, s, t, voltage):
 	add_wire(g,s,t)
 	g.edge[s][t][EATTR_VOLTAGE] = voltage
 
+# Verifies that any node/edge attributes in g are completely defined for all nodes/edges.
+# Raises an error or returns True (for use in assertions)
 def validate_graph_attributes(g):
-	if len(g) == 0: return
-	if g.number_of_edges() == 0: return
+	all_node_attributes = set()
+	for v in g:
+		all_node_attributes.update(g.node[v])
 
-	vattr_iter = iter(g.node.values())
-	eattr_iter = flat_map(lambda d: d.values(), g.edge.values())
+	for attr in all_node_attributes:
+		if len(nx.get_node_attributes(g, attr)) != g.number_of_nodes():
+			raise AssertionError('node attribute {} is set on some nodes but not others'.format(repr(attr)))
 
-	expected_vattr = next(vattr_iter)
-	expected_eattr = next(eattr_iter)
+	all_edge_attributes = set()
+	for s,t in g.edges():
+		all_edge_attributes.update(g.edge[s][t])
 
-	for vattr in vattr_iter:
-		diff = set(vattr) ^ set(expected_vattr)
-		if len(diff) != 0:
-			raise RuntimeError('node attributes {} are set on some nodes but not others'.format(diff))
+	for attr in all_edge_attributes:
+		if len(nx.get_edge_attributes(g, attr)) != g.number_of_edges():
+			raise AssertionError('edge attribute {} is set on some edges but not others'.format(repr(attr)))
 
-	for eattr in eattr_iter:
-		diff = set(eattr) ^ set(expected_eattr)
-		if len(diff) != 0:
-			raise RuntimeError('edge attributes {} are set on some edges but not others'.format(diff))
+	return True
 
 if __name__ == '__main__':
 	main(list(sys.argv))
