@@ -1,6 +1,7 @@
 
 import sys
 import math
+import json
 import argparse
 import itertools
 
@@ -9,24 +10,46 @@ import networkx as nx
 
 from resistances_common import *
 
+import graphs.vertexpath as vpath
+from build_cyclebasis import build_cyclebasis_terminal
 from util import assertRaises
 
 def main(argv):
 	parser = argparse.ArgumentParser()
 	parser.add_argument('rows', metavar='LENGTH', type=int)
 	parser.add_argument('cols', metavar='WIDTH', type=int)
+	parser.add_argument('--verbose', '-v', action='store_true')
+	parser.add_argument('--output-cb', '-C', metavar='PATH', type=str, help='generate .cyclebasis file')
 	parser.add_argument('--output', '-o', type=str, required=True, help='.gpickle output file')
 
 	args = parser.parse_args(argv[1:])
 
 	cellrows, cellcols = args.rows, args.cols
 
+	if args.verbose:
+		print('Generating graph and attributes')
 	g = make_circuit(cellrows, cellcols)
 	xys = full_xy_dict(cellrows, cellcols)
 	deletable = full_deletable_dict(cellrows, cellcols)
 	measured_edge = battery_vertices()
 
+	if args.verbose:
+		print('Saving circuit')
 	save_circuit(args.output, g, xys, deletable, measured_edge)
+
+	if args.output_cb is not None:
+		if args.verbose:
+			print('Collecting desirable cycles')
+		good = collect_good_cycles(cellrows,cellcols)
+
+		assert validate_paths(g, good)
+
+		if args.verbose:
+			print('Generating fallback cycles')
+		fallback = nx.cycle_basis(g)
+
+		cyclebasis = build_cyclebasis_terminal(good, fallback, thorough=True,verbose=args.verbose) # XXX thorough
+		write_cyclebasis(args.output_cb, cyclebasis)
 
 def make_circuit(cellrows, cellcols):
 	g = nx.Graph()
@@ -61,6 +84,54 @@ def save_circuit(path, g, xys, deletable, measure_edge):
 	nx.set_node_attributes(g, 'pos', {v:(xs[v],ys[v]) for v in xs}) # XXX
 
 	nx.write_gpickle(g, path)
+
+#-----------------------------------------------------------
+
+# produces a list of short, desirable cycles (not necessarily linearly independent)
+#  which may serve as the foundation for a complete cyclebasis (via build_cyclebasis)
+def collect_good_cycles(cellrows, cellcols):
+	result = []
+
+	for cellrow,cellcol in itertools.product(range(cellrows), range(cellcols)):
+		positions = cell_positions_ccw(cellrow,cellcol)
+
+		# lists of vertices at each point in the hexagon
+		vertex_groups = [hex_vertices(i,j) for (i,j) in positions]
+
+		# grid cycle composed entirely of one layer (a hexagon)
+		cycle = list(map(lambda x:x[0], vertex_groups))
+		cycle.append(cycle[0]) # make cyclic
+		result.append(cycle)
+
+		# a cycle can be formed by each pair of S atoms and their neighboring Mo atoms.
+		# There are 3 such cycles in each cell, though one can usually be expressed
+		#  as a linear combination of cycles from other cells.
+		it = range(len(positions))
+		it = filter(lambda i: not hex_is_Mo(*positions[i]), it)
+		for i in it:
+			# vertex_groups[i-1] to [i+1] (inclusive) contains the 4 vertices
+			Mo1,   = vertex_groups[i-1]
+			S1, S2 = vertex_groups[i]
+			Mo2,   = vertex_groups[(i+1)%len(vertex_groups)]
+			result.append([Mo1, S1, Mo2, S2, Mo1])
+
+	return result
+
+def write_cyclebasis(path, cb):
+	s = json.dumps(list(cb))
+	with open(path, 'w') as f:
+		f.write(s)
+
+def validate_paths(g, paths):
+	for path in paths:
+		for v in path:
+			if v not in g:
+				raise AssertionError('graph does not contain vertex {}! (Path: {})'.format(repr(v),path))
+
+		for s,t in vpath.edges(path):
+			if not g.has_edge(s,t):
+				raise AssertionError('graph does not contain edge ({},{})! (Path: {})'.format(repr(s),repr(t),path))
+	return True
 
 #-----------------------------------------------------------
 
@@ -214,35 +285,63 @@ def hex_grid_xy_dict(cellrows, cellcols):
 S_LAYERS = (1,2) # legal specifiers for the layer of a sulfur atom
 
 def hex_Mo_vertex(row, col):
+	assert row>=0 and col>=0
 	assert hex_is_Mo(row, col)
 	return "Mo@{},{}".format(row,col)
 
 def hex_S_vertex(row, col, layer):
+	assert row>=0 and col>=0
 	assert not hex_is_Mo(row,col)
 	assert layer in S_LAYERS
 	return "S{}@{},{}".format(layer,row,col)
 
 # all vertices at a given point
 def hex_vertices(row, col):
+	assert row>=0 and col>=0
 	if hex_is_Mo(row, col):
 		return [hex_Mo_vertex(row,col)]
 	else:
 		return [hex_S_vertex(row,col,layer) for layer in S_LAYERS]
 
 def hex_is_Mo(row, col):
+	assert row>=0 and col>=0
 	return not hex_is_upper(row,col)
 
 # Each row is a zigzag; this marks the "raised" vertices of each row
 def hex_is_upper(row, col):
+	assert row>=0 and col>=0
 	return (row+col) % 2 == 0
 
 # xy for visualization purposes
 def hex_xy(row, col):
+	assert row>=0 and col>=0
 	zigzag_offset = 0.5 if hex_is_upper(row,col) else 0.0
 	return np.array([
 		0.5 * math.sqrt(3) * col,
 		1.5 * row + zigzag_offset,
 	])
+
+#-----------------------------------------------------------
+# methods for working with cells of the bridge
+
+# Identifies the 6 positions belonging to a hexagonal cell in ccw order
+def cell_positions_ccw(cellrow, cellcol):
+	brow,bcol = cell_bottom_position(cellrow,cellcol)
+	return [
+		(brow,   bcol),
+		(brow,   bcol+1),
+		(brow+1, bcol+1),
+		(brow+1, bcol),
+		(brow+1, bcol-1),
+		(brow,   bcol-1),
+	]
+
+# the bottom point of the hexagonal cell
+def cell_bottom_position(cellrow, cellcol):
+	return (
+		cellrow,
+		2*cellcol + 1 + cellrow%2,
+	)
 
 #-----------------------------------------------------------
 # special vertices inserted to provide an edge whose current is measured
