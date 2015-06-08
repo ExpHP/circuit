@@ -92,7 +92,7 @@ def save_circuit(path, g, xys, deletable, measure_edge):
 def collect_good_cycles(cellrows, cellcols):
 	result = []
 
-	for cellrow,cellcol in itertools.product(range(cellrows), range(cellcols)):
+	for cellrow,cellcol in all_cells(cellrows,cellcols):
 		positions = cell_positions_ccw(cellrow,cellcol)
 
 		# lists of vertices at each point in the hexagon
@@ -323,6 +323,14 @@ def hex_xy(row, col):
 
 #-----------------------------------------------------------
 # methods for working with cells of the bridge
+
+
+def all_cells(cellrows, cellcols):
+	it = itertools.product(range(cellrows), range(cellcols))
+
+	# every other row has (cellcols-1) cols
+	it = filter(lambda rc: not (rc[0]%2==1 and rc[1] == cellcols-1), it)
+	return it
 
 # Identifies the 6 positions belonging to a hexagonal cell in ccw order
 def cell_positions_ccw(cellrow, cellcol):
