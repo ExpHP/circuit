@@ -10,8 +10,8 @@ import networkx as nx
 
 from resistances_common import *
 
-import graphs.vertexpath as vpath
-from build_cyclebasis import build_cyclebasis_terminal
+import graph.path as vpath
+from buildcb import build_cyclebasis_terminal
 from util import assertRaises
 
 def main(argv):

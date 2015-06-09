@@ -2,7 +2,7 @@
 import sys
 import bisect
 
-import graphs.vertexpath as vpath
+import graph.path as vpath
 
 # TODO The scipy/numpy-related functionality is not crucial to operation here;
 # Maybe just for once I'll FINALLY be able to use pypy on something :P
@@ -10,111 +10,36 @@ import scipy.sparse
 import numpy as np
 
 __all__ = [
-	'main',
 	'CycleBasisBuilder',
 	'build_cyclebasis',
 	'build_cyclebasis_terminal',
-	'STAGE_CYCLES',
-	'STAGE_FALLBACK',
 ]
 
-THOROUGH_DEFAULT = False
+class CycleBasisBuilder:
+	def __init__(self):
+		self.edge_mapper = EdgeIndexMapper()
+		self.bitmat = SparseRrefBitMatrix()
+		self.cycles = []
 
-STAGE_PROVIDED = 10
-STAGE_FALLBACK = 20
+	# If the provided cycle is linearly independent from the cycles already in
+	#  the cyclebasis, adds the cycle and returns True.
+	# Otherwise, returns False.
+	def add_if_independent(self, cycle):
+		if not vpath.is_cycle(cycle):
+			raise ValueError('CycleBasisBuilder was provided a non-cycle')
+		cycle = list(cycle)
+		edgeids = self.edge_mapper.map_path(cycle)
+		reduced = self.bitmat.reduce_row(edgeids, prereduce_only=True)
 
-def main(argv):
-	pass
+		if len(reduced) == 0:
+			return False # linearly dependent (cycle is a sum of others)
+		else:
+			self.bitmat.insert(reduced)
+			self.cycles.append(cycle)
 
-# Quick "frontend" for build_cyclebasis which reports incremental progress to stdout if verbose=True.
-def build_cyclebasis_terminal(cycles, fallback, thorough=THOROUGH_DEFAULT, verbose=False):
-	cycles = list(cycles)
-	fallback = list(fallback)
-	if verbose:
-		print('Generating cyclebasis of length {} from {} provided cycles'.format(len(fallback), len(cycles)))
-
-		stage_names = {
-			STAGE_PROVIDED:'provided',
-			STAGE_FALLBACK:'fallback',
-		}
-		def callback(d):
-			# numeric lengths for alignment
-			len_total = len(str(d['total_needed']))
-			len_stage = len(str(d['stage_length']))
-
-			found_ratio = '{{0[total_found]:{0}d}} / {{0[total_needed]:{0}d}}'.format(len_total).format(d)
-			stage_name = stage_names[d['stage_id']]
-			stage_ratio = '{{0[stage_current]:{0}d}} / {{0[stage_length]:{0}d}}'.format(len_stage).format(d)
-
-			sys.stdout.write('\r')
-			sys.stdout.write('Cycles found: {} .  '.format(found_ratio))
-			sys.stdout.write('Searching {} cycles (Progress: {})'.format(stage_name, stage_ratio))
-
-			# start new line between stages
-			if d['stage_current'] == d['stage_length']:
-				sys.stdout.write('\n')
-
-			sys.stdout.flush()
-
-	else:
-		def callback(d):
-			pass
-
-	return build_cyclebasis(cycles, fallback, thorough, callback)
-
-# If thorough=False, stops checking when len(fallback) cycles have been found (thorough=True continues
-# checking all the way through the end, reporting an error if another linearly independent cycle is found;
-# this may indicate an incomplete fallback cyclebasis, or invalid edges in the provided cycles)
-def build_cyclebasis(cycles, fallback, thorough=THOROUGH_DEFAULT, progress_callback=lambda d:None):
-	cycles = list(cycles)
-	fallback = list(fallback)
-
-	cbbuilder = CycleBasisBuilder()
-
-	def emit_progress(*, stage_id, stage_length, stage_current):
-		progress_callback({
-			'stage_id': stage_id,
-			'stage_length': stage_length,
-			'stage_current': stage_current,
-			'total_found': len(cbbuilder.cycles),
-			'total_needed': len(fallback),
-		})
-
-	def add_cycles_from(lst, stage):
-		emit_progress(
-			stage_id = stage,
-			stage_length = len(lst),
-			stage_current = 0,
-		)
-		for i,cycle in enumerate(lst):
-
-			if cycle[0] != cycle[-1]:
-				cycle.append(cycle[0])
-
-			cbbuilder.add_if_independent(cycle)
-
-			# this is done after checking the cycle and before exiting the loop so that
-			#  the last iteration looks like 30000/30000 (as opposed to 29999/30000)
-			emit_progress(
-				stage_id = stage,
-				stage_length = len(lst),
-				stage_current = i+1,
-			)
-
-			if (not thorough) and len(cbbuilder.cycles) >= len(fallback):
-				break
-
-			if len(cbbuilder.cycles) > len(fallback):
-				# Could be due to a bad fallback, or the suggested cycles might contain invalid edges;
-				# Make no assumptions.
-				raise RuntimeError('Found more than len(fallback) linearly independent cycles!')
-
-	add_cycles_from(cycles, stage=STAGE_PROVIDED)
-	add_cycles_from(fallback, stage=STAGE_FALLBACK)
-
-	assert len(cbbuilder.cycles) == len(fallback)
-	return cbbuilder.cycles
-
+			assert self.bitmat.nnz_rows == len(self.bitmat.rows)
+			return True
+		assert False
 
 #----------------------
 
@@ -295,32 +220,6 @@ assertSrbmEqual(_m2, [[1,0],[0,1]])
 _m2.insert([1,1]) # test adding a row which is a linear combination
 assertSrbmEqual(_m2, [[1,0],[0,1],[0,0]])
 #----------------------
-
-class CycleBasisBuilder:
-	def __init__(self):
-		self.edge_mapper = EdgeIndexMapper()
-		self.bitmat = SparseRrefBitMatrix()
-		self.cycles = []
-
-	# If the provided cycle is linearly independent from the cycles already in
-	#  the cyclebasis, adds the cycle and returns True.
-	# Otherwise, returns False.
-	def add_if_independent(self, cycle):
-		if not vpath.is_cycle(cycle):
-			raise ValueError('CycleBasisBuilder was provided a non-cycle')
-		cycle = list(cycle)
-		edgeids = self.edge_mapper.map_path(cycle)
-		reduced = self.bitmat.reduce_row(edgeids, prereduce_only=True)
-
-		if len(reduced) == 0:
-			return False # linearly dependent (cycle is a sum of others)
-		else:
-			self.bitmat.insert(reduced)
-			self.cycles.append(cycle)
-
-			assert self.bitmat.nnz_rows == len(self.bitmat.rows)
-			return True
-		assert False
 
 _cbb1 = CycleBasisBuilder()
 assert _cbb1.add_if_independent('abca')

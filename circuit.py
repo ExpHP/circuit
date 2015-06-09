@@ -3,8 +3,8 @@ import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as spla
 
-import graphs.vertexpath as vpath
-import graphs.planar_cycle_basis as planar_cycle_basis
+import graph.path as vpath
+import graph.cyclebasis
 import networkx as nx
 
 from resistances_common import *
@@ -153,7 +153,7 @@ class MeshCurrentSolver:
 
 		# Update what we can
 		if self._is_planar and self._cycle_basis is not None:
-			self._cycle_basis      = planar_cycle_basis.without_vertex(self._cycle_basis, v)
+			self._cycle_basis      = graph.cyclebasis.planar.without_vertex(self._cycle_basis, v)
 			self._cycles_from_edge = None
 			self._cycle_currents   = None
 		else:

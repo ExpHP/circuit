@@ -16,13 +16,13 @@ from multiprocessing import Pool
 import multiprocessing_dill
 
 from circuit import MeshCurrentSolver, CircuitBuilder
-import graphs.planar_cycle_basis as planar_cycle_basis
+import graph.cyclebasis.planar
 from resistances_common import *
 
 import node_selection
 import node_deletion
 
-import graphs.vertexpath as vpath
+import graph.path as vpath
 
 import util
 
@@ -232,7 +232,7 @@ def cyclebasis_planar_nx(g):
 	xs = {v:g.node[v]['x'] for v in g}
 	ys = {v:g.node[v]['y'] for v in g}
 
-	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
+	return graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
 
 def read_graph(path):
 	g = nx.read_gpickle(path)

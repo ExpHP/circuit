@@ -7,7 +7,7 @@ import itertools
 import networkx as nx
 
 from util import assertRaises
-import graphs.vertexpath as vpath
+import graph.path as vpath
 
 __all__ = [
 	'planar_cycle_basis',
