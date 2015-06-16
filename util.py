@@ -7,6 +7,13 @@ def window2(it):
 		yield (prev,x)
 		prev = x
 
+def partition(pred, it):
+	yes,no = [],[]
+	for x in it:
+		if pred(x): yes.append(x)
+		else:       no.append(x)
+	return yes,no
+
 # struggling to understand why unittest doesn't offer its useful
 #  assertions as free functions
 def assertRaises(cls, f, *args, **kw):

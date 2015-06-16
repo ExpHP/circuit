@@ -20,13 +20,13 @@ def trial_resistance(trial_info):
 def slice_steps(step_info, start, stop=None, step=1):
 	return {k:v[start:stop:step] for k,v in step_info.items()}
 
+# ignores shorter trials once they are zero
 def trialset_average_current(trial_infos):
 	assert are_lists_consistent(trial_defects_cumulative(x) for x in trial_infos)
 
 	currents = [trial_current(x) for x in trial_infos]
 
-	# assume any difference in length are due to the trials being trimmed at 0 current
-	return map(average, zip_longest(*currents, fillvalue=0.0))
+	return map(average, zip_variadic(*currents))
 
 def trialset_defects_cumulative(trial_infos):
 	return reduce_consistent_lists(trial_defects_cumulative(x) for x in trial_infos)
@@ -53,10 +53,10 @@ def are_lists_consistent(its):
 # a version of zip intended for lists of varying length, which returns tuples
 #  of varying length based on how many lists remain.
 def zip_variadic(*its):
-	fill = object() # a unique value that isn't None
+	sentinel = object()
 	def without_fill(xs):
-		return filter(lambda x: x is not fill, xs)
-	return (tuple(without_fill(xs)) for xs in zip_longest(*its, fillvalue=fill))
+		return filter(lambda x: x is not sentinel, xs)
+	return (tuple(without_fill(xs)) for xs in zip_longest(*its, fillvalue=sentinel))
 
 # are all elements equal?
 def all_equal(vals):
