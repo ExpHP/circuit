@@ -33,10 +33,10 @@ def main():
 		ps.sort_stats(*args.sort.split(','))
 
 	restrictions = []
-	if args.n is not None:
-		restrictions.append(args.n)
 	if args.pattern is not None:
 		restrictions.append(args.pattern)
+	if args.n is not None:
+		restrictions.append(args.n)
 
 	if args.reverse_sort:
 		ps.reverse_order()
