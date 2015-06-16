@@ -44,6 +44,7 @@ def main():
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
+	parser.add_argument('--substeps', '-x', type=int, default=1, help='number of defects added per step')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
 	parser.add_argument('--selection-mode', '-S', type=str, required=True, choices=SELECTION_MODES, help='TODO')
@@ -56,6 +57,10 @@ def main():
 		print('In other words: No multiprocess profiling!',file=sys.stderr)
 		sys.exit(1)
 
+	if (args.substeps < 1):
+		print('--substeps must be a positive integer.',file=sys.stderr)
+		sys.exit(1)
+
 	# save the user some grief; fail early if output paths are not writable
 	for path in (args.output_json, args.output_pstats):
 		if path is not None:
@@ -66,6 +71,7 @@ def main():
 
 	cmd_once = lambda : run_trial_fpath(
 		steps = args.steps,
+		substeps = args.substeps,
 		graphpath = args.input,
 		selection_func = selector.selection_func,
 		deletion_func  = deletor.deletion_func,
@@ -129,8 +135,8 @@ def run_parallel(f,*,threads,times):
 	p = Pool(threads)
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-def run_trial_fpath(steps, graphpath, selection_func, deletion_func, *, verbose=False):
-	return run_trial_nx(steps, read_graph(graphpath), selection_func, deletion_func, verbose=verbose)
+def run_trial_fpath(steps, substeps, graphpath, selection_func, deletion_func, *, verbose=False):
+	return run_trial_nx(steps, substeps, read_graph(graphpath), selection_func, deletion_func, verbose=verbose)
 
 def wrap_with_profiling(pstatsfile, f):
 	def wrapped(*args, **kwargs):
@@ -147,7 +153,7 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
+def run_trial_nx(steps, substeps, g, selection_func, deletion_func, *, verbose=False):
 	if verbose:
 		print('Starting')
 
@@ -171,12 +177,16 @@ def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 		# the big heavy calculation!
 		current = solver.get_current(*measured_edge)
 
-		# introduce a defect
-		vdeleted = selection_func(choices, initial_g, past_selections)
-		deletion_func(solver, vdeleted)
+		# introduce defects
+		deleted = []
+		for _ in range(substeps):
+			vdeleted = selection_func(choices, initial_g, past_selections)
+			deletion_func(solver, vdeleted)
 
-		past_selections.append(vdeleted)
-		choices.remove(vdeleted)
+			past_selections.append(vdeleted)
+			choices.remove(vdeleted)
+
+			deleted.append(vdeleted)
 
 #		if step > 125 and step % 3 == 0:
 #			debug_cyclebasis_planar_nx(g, expected=cyclebasis)
@@ -185,7 +195,7 @@ def run_trial_nx(steps, g, selection_func, deletion_func, *, verbose=False):
 
 		step_info['runtime'].append(runtime)
 		step_info['current'].append(current)
-		step_info['deleted'].append([vdeleted]) # list in anticipation of multiple deletions
+		step_info['deleted'].append(deleted)
 
 		if verbose:
 			print('step:', step, 'time:', runtime, 'current:', current)
