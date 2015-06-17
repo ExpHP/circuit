@@ -21,6 +21,7 @@ from resistances_common import *
 
 import node_selection
 import node_deletion
+import cyclebasis_provider
 
 import graph.path as vpath
 
@@ -44,6 +45,8 @@ def main():
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
+	parser.add_argument('--cyclebasis', '-c', type=str, default=None, help='.cyclebasis file. If not provided, will '
+		'check the input graph file for planar embedding information.')
 	parser.add_argument('--substeps', '-x', type=int, default=1, help='number of defects added per step')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
@@ -69,10 +72,16 @@ def main():
 	selector = SELECTION_MODES[args.selection_mode]
 	deletor = DELETION_MODES[args.deletion_mode]
 
+	if args.cyclebasis is not None:
+		cbprovider = cyclebasis_provider.from_file(args.cyclebasis)
+	else:
+		cbprovider = cyclebasis_provider.planar()
+
 	cmd_once = lambda : run_trial_fpath(
 		steps = args.steps,
 		substeps = args.substeps,
 		graphpath = args.input,
+		cbprovider = cbprovider,
 		selection_func = selector.selection_func,
 		deletion_func  = deletor.deletion_func,
 		verbose = args.verbose,
@@ -91,6 +100,7 @@ def main():
 
 	info['selection_mode'] = selector.info()
 	info['defect_mode'] = deletor.info()
+	info['cyclebasis_gen'] = cbprovider.info()
 
 	info['process_count'] = args.jobs
 	info['profiling_enabled'] = (args.output_pstats is not None)
@@ -135,9 +145,6 @@ def run_parallel(f,*,threads,times):
 	p = Pool(threads)
 	return multiprocessing_dill.map(p, run_with_seed, seeds)
 
-def run_trial_fpath(steps, substeps, graphpath, selection_func, deletion_func, *, verbose=False):
-	return run_trial_nx(steps, substeps, read_graph(graphpath), selection_func, deletion_func, verbose=verbose)
-
 def wrap_with_profiling(pstatsfile, f):
 	def wrapped(*args, **kwargs):
 		p = profile.Profile()
@@ -153,7 +160,12 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(steps, substeps, g, selection_func, deletion_func, *, verbose=False):
+# a variant of run_trial_nx which takes a filepath instead of a graph object, making calls
+# to it more easily serialized (and thus making it a better target for multiprocess execution)
+def run_trial_fpath(graphpath, *args, **kwargs):
+	return run_trial_nx(read_graph(graphpath), *args, **kwargs)
+
+def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substeps=1, verbose=False):
 	if verbose:
 		print('Starting')
 
@@ -166,7 +178,7 @@ def run_trial_nx(steps, substeps, g, selection_func, deletion_func, *, verbose=F
 
 	measured_edge = get_measured_edge(g)
 	choices = get_deletable_nodes(g)
-	solver  = MeshCurrentSolver(g, cyclebasis_planar_nx(g), is_planar=True)
+	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), is_planar=cbprovider.is_planar())
 
 	past_selections = []
 
@@ -188,9 +200,6 @@ def run_trial_nx(steps, substeps, g, selection_func, deletion_func, *, verbose=F
 
 			deleted.append(vdeleted)
 
-#		if step > 125 and step % 3 == 0:
-#			debug_cyclebasis_planar_nx(g, expected=cyclebasis)
-
 		runtime = time.time() - t
 
 		step_info['runtime'].append(runtime)
@@ -201,20 +210,6 @@ def run_trial_nx(steps, substeps, g, selection_func, deletion_func, *, verbose=F
 			print('step:', step, 'time:', runtime, 'current:', current)
 
 	return trial_info
-
-def debug_cyclebasis_planar_nx(g, expected):
-	cyclebasis = cyclebasis_planar_nx(g)
-	if len(cyclebasis) != len(expected):
-		cbpath = 'err.cycles'
-		gpath  = 'err.gpickle'
-		print('cyclebasis length mismatch!')
-		print('writing {} and {}'.format(cbpath, gpath))
-		xs = nx.get_node_attributes(g, 'x')
-		ys = nx.get_node_attributes(g, 'y')
-		pos = {v:(xs[v],ys[v]) for v in g}
-		write_cyclebasis(gcyclebasis, cbpath)
-		write_plottable_nx(g, gpath, pos)
-		import sys; sys.exit(1)
 
 def visualize_selection_func(g, selection_func, nsteps):
 	initial_g = g.copy()
@@ -237,12 +232,6 @@ def visualize_selection_func(g, selection_func, nsteps):
 	draw(edgelist=[], nodelist=set(g), node_color='g')
 
 	plt.show()
-
-def cyclebasis_planar_nx(g):
-	xs = {v:g.node[v]['x'] for v in g}
-	ys = {v:g.node[v]['y'] for v in g}
-
-	return graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
 
 def read_graph(path):
 	g = nx.read_gpickle(path)
