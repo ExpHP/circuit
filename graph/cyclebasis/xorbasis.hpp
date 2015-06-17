@@ -15,7 +15,7 @@
 //------------------------------------------------------------------------------
 
 typedef unsigned int column_t;
-typedef std::size_t identity_t;
+typedef size_t identity_t;
 
 typedef MinVecSet<column_t>  Row;
 typedef MinVecSet<identity_> Aug;
@@ -88,10 +88,18 @@ std::function<T> make_function(T *t)
 // helper to construct a std::priority_queue with fewer type parameters
 //  (just the contained value type)
 template<typename T, typename It, typename F>
-std::priority_queue<T, std::vector<T>, F>
+std::priority_queue<T, vector<T>, F>
 make_priority_queue(It start, It stop, F func)
 {
 	return { start, stop, func };
+}
+
+// Computes rank for rows in REF or RREF form
+size_t ref_rank(const RowV & rows) {
+	size_t i = rows.size();
+	while (i > 0 && is_zero(rows[i-1]))
+		i--;
+	return result;
 }
 
 // Transforms an arbitrary augmented matrix into REF form.
@@ -159,19 +167,52 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 	}
 
 	assert(out_rows.size() == out_augs.size());
-	assert(out_rows.size() == rows.cend() - rows.cbegin());
+	assert(out_rows.size() == rows.size());
 	return make_pair(std::move(out_rows), std::move(out_augs));
 }
 
 // Transforms an arbitrary augmented matrix into RREF form.
 template <typename Range>
-std::pair<RowV, AugV> transform_to_rref(const RowV & rows, const AugV & augs)
+std::pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_augs)
 {
-	// start in REF form; once in REF, the number of empty rows and the (i,j) positions
-	//  of leading columns are fixed
-	RowV out_rows; AugV out_augs;
-	std::tie(out_rows, out_augs) = transform_to_ref(rows, augs);
+	// start in REF form;  once in REF, row order and leading columns are fixed
+	RowV rows; AugV augs;
+	std::tie(rows, augs) = transform_to_ref(in_rows, in_augs);
 
+	// All remaining conflicts are between a row that "owns" a column and some other row above it.
+	// We'll work upwards from the last non-empty row.
+	std::map<column_t, size_t> col_owners;
+
+	for (size_t i = ref_matrix_rank(); i --> 0 ;) {
+		assert(!is_zero(rows[i]));
+
+		column_t initial_lead = leading_column(rows[i]);
+
+		// gather rows that "own" ones in this row
+		std::vector<size_t> conflicts;
+		for (column_t c : rows[i]) {
+
+			auto it = col_owners.find(c);
+			if (it != col_owners.end()) // not all columns have an owner!
+				conflicts.push_back(it->second);
+		}
+
+		// resolve the conflicts
+		for (size_t k: conflicts) {
+			rows[i] ^= rows[k];
+			augs[i] ^= augs[k];
+		}
+
+		// leading columns do not change going from REF to RREF
+		assert(initial_lead == leading_column(rows[i]));
+
+		col_owners[leading_column(rows[i])] = i;
+	}
+
+	assert(rows.size() == augs.size());
+	assert(rows.size() == in_rows.size());
+	return result;
+}
 
 
 //------------------------------------------------------------------------------
@@ -180,44 +221,6 @@ std::pair<RowV, AugV> transform_to_rref(const RowV & rows, const AugV & augs)
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 /**        OLD CODE BELOW         **/
-
-
-
-	// work upwards from first non-empty row
-	auto rowit = result.rbegin();
-	while (rowit != result.rend() && rowit->is_zero())
-		++rowit;
-
-	// keep track of the leading columns and their owners to identify conflicts
-	std::map<column_t, decltype(rowit)> col_owners;
-
-	while (rowit != result.rend()) {
-		assert(!(rowit->is_zero()));
-
-		// gather rows that this row conflicts with
-		std::vector<decltype(rowit)> conflicts;
-		for (column_t c : rowit->bits) {
-
-			auto it = col_owners.find(c);
-			if (it != col_owners.end())
-				conflicts.push_back(it->second);
-		}
-
-		// resolve the conflicts
-		for (auto owner: conflicts)
-			(*rowit).xor_update(*owner);
-
-		// record column owned by this row
-		assert(!(rowit->is_zero()));
-		col_owners[rowit->lead()] = rowit;
-
-		++rowit;
-	}
-
-	assert(result.size() == rows.cend() - rows.cbegin());
-	return result;
-}
-
 
 //------------------------------------------------------------------------------
 
@@ -389,14 +392,6 @@ private:
 	//  ones in the matrix), and performs further modification to the matrix to ensure existing
 	//  rows do not conflict with the new row.
 	RowIterator insert_reduced(const Row & row);
-
-	// Count the number of non-empty rows (must be in REF/RREF form)
-	std::size_t _compute_nnz_rows() {
-		std::size_t result = this->rows.size();
-		while (result > 0 && this->rows[result-1].is_zero())
-			result--;
-		return result;
-	}
 
 	// a limited resize() which only allows the length to be decreased
 	// (this limitation is to prevent the creation of rows with unspecified identities)
