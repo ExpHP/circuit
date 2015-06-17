@@ -1,3 +1,19 @@
+# Compiled files
 __pycache__
+*.pyc
+*.so
+*.o
+
+# Vim
+.*.swp
+
+# Outputs
 *.pstats
 *.json
+*.cyclebasis
+*.gpickle
+
+# Other
+*.dot
+gmon.out
+a.out
