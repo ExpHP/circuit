@@ -17,6 +17,11 @@ using namespace std;
 
 //------------------------------------------------------------------------------
 
+bool is_ref(const RowV & rows);
+bool is_rref(const RowV & rows);
+
+//------------------------------------------------------------------------------
+
 // Helper methods for working with rows
 
 bool is_zero(const Row & row) { return row.empty(); }
@@ -172,6 +177,7 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 
 	assert(out_rows.size() == out_augs.size());
 	assert(out_rows.size() == rows.size());
+	assert(is_ref(out_rows));
 	return { std::move(out_rows), std::move(out_augs) };
 }
 
@@ -179,6 +185,8 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 
 void ref_transform_to_rref_inplace(RowV & rows, AugV & augs)
 {
+	assert(is_ref(rows));
+
 	// All remaining conflicts are between a row that "owns" a column and some other row above it.
 	// We'll work upwards from the last non-empty row.
 	std::map<column_t, size_t> col_owners;
@@ -210,6 +218,7 @@ void ref_transform_to_rref_inplace(RowV & rows, AugV & augs)
 	}
 
 	assert(rows.size() == augs.size());
+	assert(is_rref(rows));
 }
 
 // Transforms an REF matrix into RREF form.
@@ -219,6 +228,7 @@ pair<RowV, AugV> ref_transform_to_rref(RowV rows, AugV augs) {
 
 	assert(rows.size() == old_size);
 	assert(rows.size() == augs.size());
+	assert(is_rref(rows));
 	return { std::move(rows), std::move(augs) };
 }
 
@@ -238,6 +248,8 @@ pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_augs)
 // Returns an index to where the row may be inserted to preserve REF.
 size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row & row, Aug & aug)
 {
+	assert(is_ref(ref_rows));
+
 	auto it = ref_rows.cbegin();
 	auto stop = it + ref_rank(ref_rows); // iterator to end of non-empty rows
 
@@ -267,11 +279,13 @@ size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row 
 
 // Insert an arbitrary row, maintaining REF.  Returns the insertion index.
 size_t ref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug) {
+	assert(is_ref(ref_rows));
+
 	size_t i = ref_reduce_row_inplace(ref_rows, ref_augs, row, aug);
 	ref_rows.insert(ref_rows.begin() + i, std::move(row));
 	ref_augs.insert(ref_augs.begin() + i, std::move(aug));
 
-	assert(ref_rows[i] == row);
+	assert(is_ref(ref_rows));
 	return i;
 }
 
@@ -282,6 +296,7 @@ size_t ref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug) {
 
 // Insert a bunch of rows, maintaining RREF
 void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV new_augs) {
+	assert(is_rref(rref_rows));
 
 	//  Insert rows one at a time maintaining REF.
 	//  Note that it is NOT possible to simpy reduce each row against the matrix and
@@ -292,6 +307,39 @@ void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV n
 		ref_insert(rref_rows, rref_augs, std::move(new_rows[i]), std::move(new_augs[i]));
 
 	ref_transform_to_rref_inplace(rref_rows, rref_augs);
+
+	assert(is_rref(rref_rows));
+}
+
+bool is_ref(const RowV & rows) {
+	size_t nnz = ref_rank(rows);
+	for (size_t i=0; i < rows.size(); i++)
+		if (is_zero(rows[i]) != (i >= nnz))
+			return false;
+	for (size_t i=0; i < nnz-1; i++)
+		if (leading_column(rows[i]) >= leading_column(rows[i+1]))
+			return false;
+	return true;
+}
+
+bool is_rref(const RowV & rows) {
+	if (!is_ref(rows))
+		return false;
+
+	vector<column_t> leading_ones;
+	for (size_t i = ref_rank(rows); i --> 0 ;) {
+		for (auto it=rows[i].cbegin(); it!=rows[i].cend(); ++it) {
+			if (std::binary_search(leading_ones.cbegin(), leading_ones.cend(), *it)) {
+				return false;
+			}
+		}
+		leading_ones.push_back(leading_column(rows[i]));
+	}
+
+	// above loop could falsely succeed if this didn't hold (REF should guarantee it holds)
+	assert(std::is_sorted(leading_ones.crbegin(), leading_ones.crend()));
+
+	return true;
 }
 
 //------------------------------------------------------------------------------
@@ -398,6 +446,7 @@ identity_t _XorBasisBuilder::add(const std::vector<column_t> & e)
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
 	rref_insert_bunch(rows, augs, { row }, { aug });
+	return id;
 }
 
 // Unconditionally insert many rows, maintaining RREF.
@@ -416,6 +465,7 @@ std::vector<identity_t> _XorBasisBuilder::add_many(std::vector<std::vector<colum
 	}
 
 	rref_insert_bunch(rows, augs, added_rows, added_augs);
+	return std::move(ids);
 }
 
 // Insert a single row, maintaining RREF... but only if it is not linearly dependent
