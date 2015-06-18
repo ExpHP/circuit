@@ -12,18 +12,24 @@
 
 #include "vectorset.hpp"
 
+using namespace std;
+
 //------------------------------------------------------------------------------
 
 typedef unsigned int column_t;
 typedef size_t identity_t;
 
-typedef MinVecSet<column_t>  Row;
-typedef MinVecSet<identity_> Aug;
-typedef std::pair<Row,Aug>   RowAug;
+typedef MinVecSet<column_t>   Row;
+typedef MinVecSet<identity_t> Aug;
+typedef std::pair<Row,Aug>    RowAug;
 
 typedef std::vector<Row>    RowV;
 typedef std::vector<Aug>    AugV;
 typedef std::vector<RowAug> RowAugV;
+
+//------------------------------------------------------------------------------
+
+// Helper methods for working with rows
 
 bool is_zero(const Row & row) { return row.empty(); }
 
@@ -34,6 +40,15 @@ bool is_zero(const pair<Row,Aug> & rowaug) { return is_zero(rowaug.first); }
 column_t leading_column(const pair<Row,Aug> & rowaug) { return leading_column(rowaug.first); }
 
 template <typename T>
+column_t ref_order(const T & a) {
+	if (is_zero(a)) {
+		return std::numeric_limits<column_t>::max();
+	} else {
+		return leading_column(a);
+	}
+}
+
+template <typename T>
 bool ref_order_less(const T & a, const T & b) {
 	return ref_order(a) < ref_order(b);
 }
@@ -42,6 +57,8 @@ template <typename T>
 bool ref_order_greater(const T & a, const T & b) {
 	return ref_order(a) > ref_order(b);
 }
+
+//------------------------------------------------------------------------------
 
 // Helper methods for packing/unpacking vectors of pairs
 template <typename A, typename B>
@@ -99,11 +116,10 @@ size_t ref_rank(const RowV & rows) {
 	size_t i = rows.size();
 	while (i > 0 && is_zero(rows[i-1]))
 		i--;
-	return result;
+	return i;
 }
 
 // Transforms an arbitrary augmented matrix into REF form.
-template <typename Range>
 std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 {
 	// degenerate case: no rows
@@ -130,8 +146,8 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 	if (!is_zero(heap.top())) {
 
 		// start with one already in the result
-		out_rows.push_back(heap.top()->first);
-		out_augs.push_back(heap.top()->second);
+		out_rows.push_back(heap.top().first);
+		out_augs.push_back(heap.top().second);
 		heap.pop();
 
 		while (!heap.empty() && !is_zero(heap.top())) {
@@ -146,8 +162,8 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 				top.first  ^= out_rows.back();
 				top.second ^= out_augs.back();
 
-				assert(f_comp(top, last)); // top's priority has decreased...
-				heap.push(std::move(top)); // ...so put it back in line
+				assert(ref_order(top) > ref_order(last)); // top's priority has decreased...
+				heap.push(std::move(top));                // ...so put it back in line
 
 			// no conflict; insert
 			} else {
@@ -168,22 +184,18 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 
 	assert(out_rows.size() == out_augs.size());
 	assert(out_rows.size() == rows.size());
-	return make_pair(std::move(out_rows), std::move(out_augs));
+	return { std::move(out_rows), std::move(out_augs) };
 }
 
-// Transforms an arbitrary augmented matrix into RREF form.
-template <typename Range>
-std::pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_augs)
-{
-	// start in REF form;  once in REF, row order and leading columns are fixed
-	RowV rows; AugV augs;
-	std::tie(rows, augs) = transform_to_ref(in_rows, in_augs);
+//------------------------------------------------------------------------------
 
+void ref_transform_to_rref_inplace(RowV & rows, AugV & augs)
+{
 	// All remaining conflicts are between a row that "owns" a column and some other row above it.
 	// We'll work upwards from the last non-empty row.
 	std::map<column_t, size_t> col_owners;
 
-	for (size_t i = ref_matrix_rank(); i --> 0 ;) {
+	for (size_t i = ref_rank(rows); i --> 0 ;) {
 		assert(!is_zero(rows[i]));
 
 		column_t initial_lead = leading_column(rows[i]);
@@ -211,9 +223,86 @@ std::pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_au
 
 	assert(rows.size() == augs.size());
 	assert(rows.size() == in_rows.size());
-	return result;
+	return { std::move(rows), std::move(augs) };
 }
 
+// Transforms an REF matrix into RREF form.
+pair<RowV, AugV> ref_transform_to_rref(RowV rows, AugV augs) {
+	ref_transform_to_rref_inplace(rows, augs);
+	return { std::move(rows), std::move(augs) };
+}
+
+// Transforms an arbitrary augmented matrix into RREF form.
+pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_augs)
+{
+	RowV rows; AugV augs;
+	std::tie(rows, augs) = transform_to_ref(in_rows, in_augs);
+
+	return ref_transform_to_rref(std::move(rows), std::move(augs));
+}
+
+//------------------------------------------------------------------------------
+
+// Adds rows from an REF matrix to the given row until it is either empty, or has
+//  a leading 1 different from any other row in the matrix.
+// Returns an index to where the row may be inserted to preserve REF.
+size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row & row, Aug & aug)
+{
+	auto it = ref_rows.cbegin();
+	auto stop = it + ref_rank(ref_rows); // iterator to end of non-empty rows
+
+	while (true) {
+
+		if (is_zero(row))
+			break; // no conflict possible
+
+		// find where the row *would* belong
+		it = std::lower_bound(it, stop, row, ref_order_less<Row>);
+
+		if (it == stop)
+			break; // no conflict (leading one is too large)
+		if (row_order(row) < row_order(*it))
+			break; // no conflict
+
+		assert(row_order(row) == row_order(*it)); // conflict...
+
+		size_t i = it - ref_rows.cbegin();
+		row ^= ref_rows[i];
+		aug ^= ref_augs[i];
+
+		assert(row_order(row) > row_order(*it)); // ...resolved!
+	}
+	return it - ref_rows.cbegin();
+}
+
+// Insert an arbitrary row, maintaining REF.  Returns the insertion index.
+size_t ref_insert(RowV & ref_rows, AugV & rref_augs, Row row, Aug aug) {
+	size_t i = ref_reduce_row_inplace(rref_rows, rref_augs, row, aug);
+	ref_rows.insert(ref_rows.begin() + i, std::move(row));
+	ref_augs.insert(ref_augs.begin() + i, std::move(aug));
+
+	assert(ref_rows[i] == row);
+	return i;
+}
+
+// It is nontrivial to insert a single row without performing a full RREF transform,
+//   though not impossible (after all, it used to be the only feature implemented here!)
+// But my implementation is... ugly.
+// size_t rref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug);
+
+// Insert a bunch of rows, maintaining RREF
+void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV new_augs) {
+
+	//  Insert rows one at a time maintaining REF.
+	//  Note that it is NOT possible to simpy reduce each row against the matrix and
+	//    then insert them all at once;  while it would remove all conflicts against
+	//    existing rows in the matrix, it would not prevent the new rows from conflicting
+	//    __with eachother__.
+	for (size_t i=0; i<new_rows.size(); i++)
+		ref_insert(rref_rows, rref_augs, std::move(new_rows[i]), std::move(new_augs[i]));
+
+	ref_transform_to_rref_inplace(rref_rows, rref_augs);
+}
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -222,111 +311,7 @@ std::pair<RowV, AugV> transform_to_rref(const RowV & in_rows, const AugV & in_au
 //------------------------------------------------------------------------------
 /**        OLD CODE BELOW         **/
 
-//------------------------------------------------------------------------------
-
-// A sparse bit matrix which maintains reduced row echelon form, modulo 2.
-// That is, at any given point in time:
-//  * All rows containing nothing but zero are at the end.
-//  * The column of each successive (nonzero) row's leading 1 strictly increases.
-//  * Any leading 1 is the **only** 1 in its column.
-//
-// Its construction allows one to determine whether or not a set of bit-vectors is
-//  linearly independent modulo 2.
-class SparseBitRref {
-public:
-	typedef typename std::vector<Row>::iterator RowIterator;
-	typedef typename std::vector<Row>::const_iterator RowConstIterator;
-	typedef typename std::vector<Row>::difference_type RowDifferenceType;
-
-private:
-
-	// members
-	RowSpace &            row_space;
-	std::vector<Row>      rows;
-	std::size_t           nnz_rows;
-
-public:
-
-	SparseBitRref(RowSpace & row_space)
-	: row_space(row_space)
-	, rows()
-	, nnz_rows(0)
-	{ }
-
-	// Inserts the rows from range r into the matrix.
-	// A full REF transformation will be performed afterwards; it is intended to be used when the
-	//  number of rows being added greatly outnumbers the number of rows already in the matrix.
-	// (in such a case, however, it should be more performant than inserting the rows individually)
-	//
-	// The return value is the identity assigned to each row, in the order they appear in the input
-	//  range (beginning from r.cbegin())
-	template <typename RangeRange>
-	std::vector<identity_t> insert_many(const RangeRange & rr) {
-		std::vector<identity_t> ids;
-
-		for (const auto & r : rr) {
-			Row row = row_space.make_row(r);
-			this->insert_direct(this->rows.end(), row);
-			ids.push_back(row.primary_id);
-		}
-
-		rows = transform_to_rref(rows);
-		nnz_rows = _compute_nnz_rows();
-
-		return ids;
-	}
-
-	template <typename Range>
-	RowIterator insert(const Range & r) {
-		Row row = row_space.make_row(r);
-		return this->insert_reduced(this->reduce_row(row));
-	}
-
-	RowIterator insert(const Row & row) {
-		if (!compatible(row_space, row.row_space))
-			throw std::logic_error("Attempt to insert row from a different RowSpace!");
-		return this->insert_reduced(this->reduce_row(row));
-	}
-
-	// adds (via xor) rows from the matrix to the provided row as necessary to eliminate any
-	//  conflicts between the row and leading ones in the matrix.
-	//
-	// If (and only if) reduce_row produces an empty row (i.e. one with all zeros), then the
-	//  input row was linearly dependent with rows already in the matrix.
-	Row reduce_row(Row row) const;
-
-	RowIterator insertion_point(const Row & row) {
-		return std::lower_bound(
-			this->nonzero_begin(), this->nonzero_end(), row,
-			ref_order_less);
-	}
-
-	RowConstIterator insertion_point(const Row & row) const {
-		return std::lower_bound(
-			this->nonzero_cbegin(), this->nonzero_cend(), row,
-			ref_order_less);
-	}
-
-	// for iterating through the non-empty rows (i.e. the rows for which the leading column is defined)
-	RowIterator nonzero_begin() { return this->rows.begin(); }
-	RowIterator nonzero_end()   { return this->nonzero_begin() + RowDifferenceType(this->nnz_rows); }
-	RowConstIterator nonzero_cbegin() const { return this->rows.cbegin(); }
-	RowConstIterator nonzero_cend()   const { return this->nonzero_cbegin() + RowDifferenceType(this->nnz_rows); }
-	// ... and the empty rows
-	RowIterator empty_begin() { return this->nonzero_end(); }
-	RowIterator empty_end()   { return this->rows.end(); }
-	RowConstIterator empty_cbegin() const { return this->nonzero_cend(); }
-	RowConstIterator empty_cend()   const { return this->rows.cend(); }
-
-	std::size_t rank() { return this->nnz_rows; }
-	std::size_t total_rows() { return this->rows.size(); }
-	std::size_t empty_rows() { return this->rows.size() - this->nnz_rows; }
-
-	bool operator==(const SparseBitRref & other) const {
-		if (this->nnz_rows != other.nnz_rows)
-			return false;
-		return this->rows == other.rows;
-	}
+/*
 
 	// Remove rows corresponding to the ids in the provided range
 	template <typename IdentityTRange>
@@ -377,35 +362,6 @@ public:
 		return join_range(item_strs, "[", "\n ", "]");
 	}
 
-private:
-
-	// Lowest level row insertion function (all other insert methods eventually call this).
-	// Inserts a row directly into the underlying container with no further modification.
-	// The row is assigned a new id.
-	//
-	// Returns the id and an iterator to the inserted row (the provided iterator is no longer valid)
-	RowIterator insert_direct(RowIterator where, const Row & row) {
-		return this->rows.insert(where, row);
-	}
-
-	// expects that the row is already reduced (i.e. does not conflict with existing leading
-	//  ones in the matrix), and performs further modification to the matrix to ensure existing
-	//  rows do not conflict with the new row.
-	RowIterator insert_reduced(const Row & row);
-
-	// a limited resize() which only allows the length to be decreased
-	// (this limitation is to prevent the creation of rows with unspecified identities)
-	void shorten(std::size_t newsize) {
-		if (newsize > rows.size())
-			throw std::logic_error("shorten() called with longer width");
-
-		if (rows.size() == 0) return; // degenerate case
-		Row & dummy = rows.back(); // borrow an existing row because they are tough to construct
-		this->rows.resize(newsize, dummy);
-	}
-
-};
-
 Row SparseBitRref::reduce_row(Row row) const {
 
 	MinVecSet remaining = row.bits;
@@ -441,29 +397,6 @@ Row SparseBitRref::reduce_row(Row row) const {
 	return row;
 }
 
-
-SparseBitRref::RowIterator SparseBitRref::insert_reduced(const Row & row) {
-	// special case: row is all zeros
-	if (row.is_zero()) {
-		// don't increment nnz_rows
-		return this->insert_direct(this->rows.end(), row);
-	}
-
-	RowIterator insertion_pt = this->insertion_point(row);
-	insertion_pt = this->insert_direct(insertion_pt, row);
-	this->nnz_rows += 1;
-
-	// Rows above the new row may conflict with the its leading one.
-	// Resolve these conflicts.
-	assert(!row.is_zero());
-	for (auto it = this->nonzero_begin(); it != insertion_pt; ++it) {
-		if (it->get(row.lead()))
-			(*it).xor_update(row);
-		assert(!(it->get(row.lead())));
-	}
-
-	return insertion_pt;
-}
 
 //------------------------------------------------------------------------------
 
@@ -532,3 +465,4 @@ public:
 	}
 };
 
+*/
