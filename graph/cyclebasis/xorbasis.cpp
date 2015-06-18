@@ -256,7 +256,7 @@ size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row 
 	while (true) {
 
 		if (is_zero(row))
-			break; // no conflict possible
+			return ref_rows.size(); // no conflict possible. belongs at end
 
 		// find where the row *would* belong
 		it = std::lower_bound(it, stop, row, ref_order_less<Row>);
@@ -316,8 +316,8 @@ bool is_ref(const RowV & rows) {
 	for (size_t i=0; i < rows.size(); i++)
 		if (is_zero(rows[i]) != (i >= nnz))
 			return false;
-	for (size_t i=0; i < nnz-1; i++)
-		if (leading_column(rows[i]) >= leading_column(rows[i+1]))
+	for (size_t i=1; i < nnz; i++)
+		if (leading_column(rows[i-1]) >= leading_column(rows[i]))
 			return false;
 	return true;
 }
