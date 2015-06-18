@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
+#include <utility>
 
 // A long binary vector, represented with a set of columns indicating where
 //  the 1s are located.
