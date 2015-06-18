@@ -13,6 +13,22 @@
 
 using namespace std;
 
+void debug(const RowV & rows, const AugV & augs) {
+	for (size_t i=0;i<rows.size(); i++) {
+		std::cout << "[ ";
+		for (auto col : rows[i])
+			std::cout << col << " ";
+		std::cout << "]   ";
+
+		std::cout << "[ ";
+		for (auto col : augs[i])
+			std::cout << col << " ";
+		std::cout << "]" << std::endl;
+	}
+	std::cout << std::endl;
+}
+
+
 Row random_row (size_t n) {
 	vector<column_t> row;
 	for (size_t j=0; j<n; j++)
@@ -79,7 +95,7 @@ void test_rref_idempotent() {
 
 // RREF form does not depend on initial row order
 void test_rref_insert_order() {
-	RowV rows = random_matrix(50,50);
+	RowV rows = random_matrix(45,50);
 	AugV augs = zero_augmented(50); // don't care 'bout these
 	RowV permuted = rows;
 	std::random_shuffle(permuted.begin(), permuted.end());
@@ -95,10 +111,32 @@ void test_rref_insert_order() {
 	assert(rref_rows == rref_permuted);
 }
 
+// The result of removing vectors should be the same as if they were never added
+//  in the first place.
+void test_xorbasis_remove_ids(int n) {
+	_XorBasisBuilder xorb;
+	RowV rows1 = random_matrix(2*n,4*n);
+	RowV rows2 = random_matrix(2*n,4*n);
+
+	xorb.add_many(rows1);
+	RowV before = xorb.get_rows();
+
+	// add some, remove them
+	vector<identity_t> ids2 = xorb.add_many(rows2);
+	xorb.remove_ids(ids2);
+	RowV after = xorb.get_rows();
+
+	assert(before == after);
+}
+
 int main(int argc, char * argv[]) {
 	srand(time(NULL));
 	test_rref_fixed();
 	test_rref_idempotent();
 	test_rref_insert_order();
+	std::cout << "lol" << std::endl;
+	test_xorbasis_remove_ids(40);
+	std::cout << "lol" << std::endl;
+
 	return 0;
 }

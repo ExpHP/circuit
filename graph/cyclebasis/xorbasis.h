@@ -55,21 +55,29 @@ public:
 	{ }
 
 	// Unconditionally insert a row, maintaining RREF.
-	identity_t add(const std::vector<column_t> & e);
+	template <typename ColumnRange>
+	identity_t add(const ColumnRange & e);
 
 	// Unconditionally insert many rows, maintaining RREF.
-	std::vector<identity_t> add_many(std::vector<std::vector<column_t>> r);
+	template <typename ColumnRangeRange>
+	std::vector<identity_t> add_many(const ColumnRangeRange & r);
 
 	// Insert a single row, maintaining RREF... but only if it is not linearly dependent
 	//  with rows in the matrix.
-	std::pair<bool, identity_t> add_if_linearly_independent(std::vector<column_t> e);
+	template <typename ColumnRange>
+	std::pair<bool, identity_t> add_if_linearly_independent(const ColumnRange & e);
 
+	template <typename IdentityRange>
+	void remove_ids(const IdentityRange & e);
 /*
 	// returns lists of ids of rows which xor-sum to zero.
 	std::vector<std::vector<identity_t>> get_zero_sums();
 
 	void remove_ids(const std::vector<identity_t> & r);
 */
+
+	const RowV & get_rows() const { return rows; }
+	const AugV & get_augs() const { return augs; }
 
 	void remove_zero_rows();
 };

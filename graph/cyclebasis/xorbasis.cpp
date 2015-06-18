@@ -443,6 +443,27 @@ bool is_rref(const RowV & rows) {
 	return true;
 }
 
+// in an REF matrix, removes rows where both the row and the augmented portion are empty,
+// decreasing the length of the matrix accordingly
+void ref_cleanup_completely_empty_rows(RowV & rows, AugV & augs)
+{
+	assert(is_ref(rows));
+
+	size_t nnz = ref_rank(rows);
+	size_t i = rows.size();
+	while (i --> nnz) {
+
+		assert(is_zero(rows[i]));
+		if (is_zero(augs[i])) {
+			rows.erase(rows.begin() + i);
+			augs.erase(augs.begin() + i);
+		}
+	}
+
+	assert(rows.size() == augs.size());
+	assert(is_ref(rows));
+}
+
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -505,8 +526,10 @@ bool is_rref(const RowV & rows) {
 
 //------------------------------------------------------------------------------
 
-// Unconditionally insert a row, maintaining RREF.
-identity_t _XorBasisBuilder::add(const std::vector<column_t> & e)
+// Unconditionally add a vector to the basis.  Returns its newly assigned identity.
+// (possibly causing a linearly dependent group to emerge)
+template <typename ColumnRange>
+identity_t _XorBasisBuilder::add(const ColumnRange & e)
 {
 	Row row = { e };
 	auto id = assign_identity(row);
@@ -515,8 +538,10 @@ identity_t _XorBasisBuilder::add(const std::vector<column_t> & e)
 	return id;
 }
 
-// Unconditionally insert many rows, maintaining RREF.
-std::vector<identity_t> _XorBasisBuilder::add_many(std::vector<std::vector<column_t>> r)
+// Unconditionally add many vectors to the basis.  Returns their newly assigned identities.
+// (possibly causing linearly dependent groups to emerge)
+template <typename ColumnRangeRange>
+std::vector<identity_t> _XorBasisBuilder::add_many(const ColumnRangeRange & r)
 {
 	RowV added_rows;
 	AugV added_augs;
@@ -534,9 +559,11 @@ std::vector<identity_t> _XorBasisBuilder::add_many(std::vector<std::vector<colum
 	return std::move(ids);
 }
 
-// Insert a single row, maintaining RREF... but only if it is not linearly dependent
-//  with rows in the matrix.
-std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::vector<column_t> e)
+// Add a vector to the basis, but only if it is not linearly dependent with vectors
+//  already in the basis.  Returns (success, id).
+// Note: the value of id is only meaningful if success is true.
+template <typename ColumnRange>
+std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(const ColumnRange & e)
 {
 	Row row = { e };
 	auto id = assign_identity(row);
@@ -546,7 +573,7 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::v
 	size_t index = rref_reduce_row_inplace(rows, augs, row, aug);
 
 	if (is_zero(row)) {
-		return { false, id };
+		return { false, 0 };
 	} else {
 		rows.insert(rows.begin() + index, std::move(row));
 		augs.insert(augs.begin() + index, std::move(aug));
@@ -557,6 +584,33 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::v
 		return { true, id };
 	}
 	assert(false);
+}
+
+// Modifies the basis to remove the specified vectors.
+template <typename IdentityRange>
+void _XorBasisBuilder::remove_ids(const IdentityRange & ids)
+{
+	// Brute force method
+	for (auto id: ids) {
+		const Row & removed_row = originals[id];
+		Aug         removed_aug = original_aug(id);
+		for (size_t i=0; i<rows.size(); ++i) {
+			if (augs[i].contains(id)) {
+				rows[i] ^= removed_row;
+				augs[i] ^= removed_aug;
+			}
+		}
+	}
+
+	std::tie(rows,augs) = transform_to_rref(rows, augs);
+
+	// There should be precisely this many rows that are *completely*
+	//  empty (both row and aug).  Clean them out.
+	size_t old_size = rows.size();
+	size_t removed_count = ids.cend() - ids.cbegin();
+
+	ref_cleanup_completely_empty_rows(rows, augs);
+	assert(rows.size() == old_size - removed_count);
 }
 
 void _XorBasisBuilder::remove_zero_rows() {
