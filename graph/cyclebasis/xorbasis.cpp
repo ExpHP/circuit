@@ -32,6 +32,8 @@ bool is_zero(const pair<Row,Aug> & rowaug) { return is_zero(rowaug.first); }
 
 column_t leading_column(const pair<Row,Aug> & rowaug) { return leading_column(rowaug.first); }
 
+void pop_leading_column(Row & row) { row.pop_back(); }
+
 template <typename T>
 column_t ref_order(const T & a) {
 	if (is_zero(a)) {
@@ -262,9 +264,9 @@ size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row 
 		it = std::lower_bound(it, stop, row, ref_order_less<Row>);
 
 		if (it == stop)
-			break; // no conflict (leading one is too large)
+			return it - ref_rows.cbegin(); // no conflict (leading one is too large)
 		if (ref_order(row) < ref_order(*it))
-			break; // no conflict
+			return it - ref_rows.cbegin(); // no conflict
 
 		assert(ref_order(row) == ref_order(*it)); // conflict...
 
@@ -274,7 +276,99 @@ size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row 
 
 		assert(ref_order(row) > ref_order(*it)); // ...resolved!
 	}
-	return it - ref_rows.cbegin();
+	assert(false);
+}
+
+// Ensures that a row does not contain ANY ones that conflict with a row in the matrix.
+// Returns an index to where the row belongs, but note that additional work is still required
+//  to maintain RREF (namely, removing this row's leading 1 from rows above)
+size_t rref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row & row, Aug & aug)
+{
+	// Some notes:
+
+	// * This algorithm is a bit bizarre.  (Sorry about that!)
+	//   It essentially uses another Row as an iterator over the row by updating the two in
+	//     parallel when fixing conflicts, and popping off elements to simply "move forwards".
+	//   This is done instead of normal iteration because, during conflict resolution, the
+	//     number of elements beyond the conflicting column may arbitrarily change.
+	//
+	// * Why use the algo?  Well, my best alternative involves inserting a row in REF and doing
+	//   a partial RREF transform (stopping after the row), which is kind of... huh, actually not
+	//   overkill considering there's already O(num rows) complexity that occurs after this,
+	//   and hey wait a second TODO TODO TODO omg try this
+	//
+	// * Why use a Row?  Well, as it stands, the easiest way to locate an existing row
+	//   with a given leading column is to have another row already with that same leading
+	//   column, so that you can do
+	//
+	//      std::lower_bound(ref_rows.cbegin(), ref_rows.cend(), my_cool_row, ref_order);
+	//
+	//   (so yeah... um, ergonomics)
+	//
+	// * This algorithm is actually the reason why MinVecSet exists (and--by extension
+	//   of the above bullet--the reason why Row is a MinVecSet!). MinVecSet is specifically
+	//   optimized for this algorithm, providing O(1) lookup/removal of the least element,
+	//   and fast addition between rows.
+	//
+	// * That said, if you're going to change the Row type, you should probably make
+	//   sure that "remaining" remains a MinVecSet.  Here's a reminder:
+	static_assert(std::is_same<Row, MinVecSet<column_t> >::value, "See comment above");
+	//
+	// * tl;dr sorriesz
+
+	const size_t index = ref_reduce_row_inplace(ref_rows, ref_augs, row, aug);
+
+	Row remaining = row;
+
+	// only possible conflicts are with non-empty rows after this one
+	auto it = ref_rows.cbegin() + index;
+	auto stop = ref_rows.cbegin() + ref_rank(ref_rows);
+
+	while (!is_zero(remaining)) {
+
+		it = std::lower_bound(it, stop, remaining, ref_order_less<Row>);
+
+		if (it == stop) {
+			// no more conflicts possible
+			break;
+		}
+
+		if (ref_order(remaining) < ref_order(*it)) {
+			// not a conflict; pop so we can look at the next column
+			pop_leading_column(remaining);
+			continue;
+		}
+
+		assert(ref_order(remaining) == ref_order(*it)); // conflict...
+
+		size_t i = it - ref_rows.cbegin();
+		row ^= ref_rows[i];
+		aug ^= ref_augs[i];
+		remaining ^= ref_rows[i]; // update the "iterator" as well
+
+		assert(ref_order(remaining) > ref_order(*it)); // ...resolved!
+	}
+	return index;
+}
+
+// Ensures that the leading one owned by row i is the only 1 in its column,
+//  for an REF matrix.
+void ref_fix_leading_one(RowV & ref_rows, AugV & ref_augs, size_t i)
+{
+	assert(is_ref(ref_rows));
+
+	// rows above the row may conflict
+	if (!is_zero(ref_rows[i])) {
+		column_t lead = leading_column(ref_rows[i]);
+		for (size_t k=0; k<i; k++) {
+			if (ref_rows[k].contains(lead)) {
+				ref_rows[k] ^= ref_rows[i];
+				ref_augs[k] ^= ref_augs[i];
+			}
+		}
+	}
+
+	assert(is_ref(ref_rows));
 }
 
 // Insert an arbitrary row, maintaining REF.  Returns the insertion index.
@@ -289,10 +383,19 @@ size_t ref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug) {
 	return i;
 }
 
-// It is nontrivial to insert a single row without performing a full RREF transform,
-//   though not impossible (after all, it used to be the only feature implemented here!)
-// But my implementation is... ugly.
-// size_t rref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug);
+// Insert an arbitrary row, maintaining RREF.  Returns the insertion index.
+size_t rref_insert(RowV & rref_rows, AugV & rref_augs, Row row, Aug aug) {
+	assert(is_rref(rref_rows));
+
+	size_t i = rref_reduce_row_inplace(rref_rows, rref_augs, row, aug);
+	rref_rows.insert(rref_rows.begin() + i, std::move(row));
+	rref_augs.insert(rref_augs.begin() + i, std::move(aug));
+
+	ref_fix_leading_one(rref_rows, rref_augs, i);
+
+	assert(is_rref(rref_rows));
+	return i;
+}
 
 // Insert a bunch of rows, maintaining RREF
 void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV new_augs) {
@@ -400,41 +503,6 @@ bool is_rref(const RowV & rows) {
 		return join_range(item_strs, "[", "\n ", "]");
 	}
 
-Row SparseBitRref::reduce_row(Row row) const {
-
-	MinVecSet remaining = row.bits;
-
-	// `remaining` serves somewhat as an iterator over row, taking into account the fact
-	//  that the remaining elements of `row` will change as other rows are added into it.
-	//  into it.
-	while (!remaining.empty()) {
-		// FIXME this won't work
-		auto it = this->insertion_point(row);  // locate closest leading one
-
-		column_t prev_lead = remaining.back();
-
-		assert((it == this->nonzero_cend()) || !(it->is_zero()));
-
-		if ((it == this->nonzero_cend())    // leading one is larger than any we have
-			|| (remaining.back() != it->lead()))  // leading one is between two existing leading ones
-		{
-			// no conflict; check next element
-			remaining.pop_back();
-		} else {
-			// resolve conflict with leading 1
-			row.xor_update(*it);
-			remaining ^= it->bits; // update our "iterator" as well
-		}
-
-		// While `remaining`s length may not always decrease, the leading element WILL increase
-		//  every iteration (and as its value is bounded, the loop will eventually terminate)
-		assert(row.is_zero() || (remaining.back() > prev_lead));
-	}
-
-	assert(remaining.empty());
-	return row;
-}
-
 */
 
 //------------------------------------------------------------------------------
@@ -472,38 +540,25 @@ std::vector<identity_t> _XorBasisBuilder::add_many(std::vector<std::vector<colum
 //  with rows in the matrix.
 std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::vector<column_t> e)
 {
+	Row row = { e };
+	auto id = assign_identity(row);
+	Aug aug = original_aug(id);
 
-	// copy, add, then revert if an empty row appears.
+	// Any row which forms a linear combo with rows in the matrix will reduce to all zeros.
+	size_t index = rref_reduce_row_inplace(rows, augs, row, aug);
 
-	// TODO: How (in)-efficient is this?  It begs for that single-row full reduce
-	//        algorithm I'm trying so hard to get rid of :/
+	if (is_zero(row)) {
+		return { false, id };
+	} else {
+		rows.insert(rows.begin() + index, std::move(row));
+		augs.insert(augs.begin() + index, std::move(aug));
 
-	AugV augs_copy = augs; // these might change even when a degenerate row is added
-						   // (TODO: is this actually true? I mean for the rows that
-						   //        weren't empty to begin with...)
+		ref_fix_leading_one(rows, augs, index);
 
-#ifndef NDEBUG
-	RowV rows_copy = rows;
-#endif
-
-	// The "rank" of the matrix is also where the nonempty/empty boundary lies.
-	// We can look there to tell which kind of row gets added.
-
-	size_t old_rank = ref_rank(rows);
-	identity_t id = add(e); // <-- NOTE: does full RREF transform :(
-	bool success = !is_zero(rows[old_rank]);
-
-	if (!success) {
-		// aaaaaahhh! added an empty row! revert! revert!
-		augs = std::move(augs_copy);
-		rows.pop_back();
+		assert(is_rref(rows));
+		return { true, id };
 	}
-
-#ifndef NDEBUG
-	assert(success == (rows != rows_copy));
-#endif
-
-	return { success, id };
+	assert(false);
 }
 
 void _XorBasisBuilder::remove_zero_rows() {
