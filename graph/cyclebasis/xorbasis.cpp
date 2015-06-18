@@ -11,6 +11,7 @@
 #include <iostream>
 
 #include "vectorset.hpp"
+#include "xorbasis.h"
 
 using namespace std;
 
@@ -209,13 +210,15 @@ void ref_transform_to_rref_inplace(RowV & rows, AugV & augs)
 	}
 
 	assert(rows.size() == augs.size());
-	assert(rows.size() == in_rows.size());
-	return { std::move(rows), std::move(augs) };
 }
 
 // Transforms an REF matrix into RREF form.
 pair<RowV, AugV> ref_transform_to_rref(RowV rows, AugV augs) {
+	size_t old_size = rows.size();
 	ref_transform_to_rref_inplace(rows, augs);
+
+	assert(rows.size() == old_size);
+	assert(rows.size() == augs.size());
 	return { std::move(rows), std::move(augs) };
 }
 
@@ -248,23 +251,23 @@ size_t ref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row 
 
 		if (it == stop)
 			break; // no conflict (leading one is too large)
-		if (row_order(row) < row_order(*it))
+		if (ref_order(row) < ref_order(*it))
 			break; // no conflict
 
-		assert(row_order(row) == row_order(*it)); // conflict...
+		assert(ref_order(row) == ref_order(*it)); // conflict...
 
 		size_t i = it - ref_rows.cbegin();
 		row ^= ref_rows[i];
 		aug ^= ref_augs[i];
 
-		assert(row_order(row) > row_order(*it)); // ...resolved!
+		assert(ref_order(row) > ref_order(*it)); // ...resolved!
 	}
 	return it - ref_rows.cbegin();
 }
 
 // Insert an arbitrary row, maintaining REF.  Returns the insertion index.
-size_t ref_insert(RowV & ref_rows, AugV & rref_augs, Row row, Aug aug) {
-	size_t i = ref_reduce_row_inplace(rref_rows, rref_augs, row, aug);
+size_t ref_insert(RowV & ref_rows, AugV & ref_augs, Row row, Aug aug) {
+	size_t i = ref_reduce_row_inplace(ref_rows, ref_augs, row, aug);
 	ref_rows.insert(ref_rows.begin() + i, std::move(row));
 	ref_augs.insert(ref_augs.begin() + i, std::move(aug));
 
@@ -389,7 +392,8 @@ Row SparseBitRref::reduce_row(Row row) const {
 //------------------------------------------------------------------------------
 
 // Unconditionally insert a row, maintaining RREF.
-identity_t _XorBasisBuilder::add(const std::vector<column_t> & e) {
+identity_t _XorBasisBuilder::add(const std::vector<column_t> & e)
+{
 	Row row = { e };
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
@@ -397,8 +401,8 @@ identity_t _XorBasisBuilder::add(const std::vector<column_t> & e) {
 }
 
 // Unconditionally insert many rows, maintaining RREF.
-template <typename Range>
-std::vector<identity_t> _XorBasisBuilder::add_many(Range r) {
+std::vector<identity_t> _XorBasisBuilder::add_many(std::vector<std::vector<column_t>> r)
+{
 	RowV added_rows;
 	AugV added_augs;
 	vector<identity_t> ids;
@@ -442,7 +446,7 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::v
 	if (!success) {
 		// aaaaaahhh! added an empty row! revert! revert!
 		augs = std::move(augs_copy);
-		rows.pop();
+		rows.pop_back();
 	}
 
 #ifndef NDEBUG

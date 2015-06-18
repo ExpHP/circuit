@@ -1,6 +1,12 @@
 
 #pragma once
 
+#include <map>
+#include <utility> // pair
+#include <vector>
+
+#include "vectorset.hpp"
+
 //------------------------------------------------------------------------------
 
 typedef unsigned int column_t;
@@ -31,13 +37,13 @@ private:
 	// It also gets a 1 in the corresponding column of its augmented half.
 	identity_t assign_identity(Row row) {
 		identity_t id = next_identity++;
-		originals.emplace { id, std::move(row) };
+		originals.insert(std::make_pair(id, std::move(row)));
 		return id;
 	}
 
 	const Row & original_row(identity_t id) { return originals[id]; }
 	Aug         original_aug(identity_t id) { return {std::vector<identity_t>{id}}; }
-	RowAug      original_rowaug(identity_t id) { return { original_row(id), original_aug(id); }
+	RowAug      original_rowaug(identity_t id) { return { original_row(id), original_aug(id) }; }
 
 public:
 
