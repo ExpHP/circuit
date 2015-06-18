@@ -16,19 +16,6 @@ using namespace std;
 
 //------------------------------------------------------------------------------
 
-typedef unsigned int column_t;
-typedef size_t identity_t;
-
-typedef MinVecSet<column_t>   Row;
-typedef MinVecSet<identity_t> Aug;
-typedef std::pair<Row,Aug>    RowAug;
-
-typedef std::vector<Row>    RowV;
-typedef std::vector<Aug>    AugV;
-typedef std::vector<RowAug> RowAugV;
-
-//------------------------------------------------------------------------------
-
 // Helper methods for working with rows
 
 bool is_zero(const Row & row) { return row.empty(); }
@@ -401,123 +388,73 @@ Row SparseBitRref::reduce_row(Row row) const {
 
 //------------------------------------------------------------------------------
 
-// The class primarily exported from this module. (with an underscore, so that
-//  the bare name may be given to a python wrapper class)
-class _XorBasisBuilder
-{
-private:
-	RowV rows; // Matrix
-	AugV augs; // Augmented portion
+// Unconditionally insert a row, maintaining RREF.
+identity_t _XorBasisBuilder::add(const std::vector<column_t> & e) {
+	Row row = { e };
+	auto id = assign_identity(row);
+	Aug aug = original_aug(id);
+	rref_insert_bunch(rows, augs, { row }, { aug });
+}
 
-	identity_t next_identity = 0;
-	std::map<identity_t, Row> originals; // Original rows
-
-	// Every row that is used with the matrix gets assigned an unique identity.
-	// It also gets a 1 in the corresponding column of its augmented half.
-	identity_t assign_identity(Row row) {
-		identity_t id = next_identity++;
-		originals.emplace { id, std::move(row) };
-		return id;
-	}
-
-	const Row & original_row(identity_t id) { return originals[id]; }
-	Aug         original_aug(identity_t id) { return {std::vector<identity_t>{id}}; }
-	RowAug      original_rowaug(identity_t id) { return { original_row(id), original_aug(id); }
-
-public:
-
-	_XorBasisBuilder()
-	: rows() // a matrix maintained in rref form
-	, augs()
-	, next_identity(0)
-	, originals()
-	{ }
-
-	// Unconditionally insert a row, maintaining RREF.
-	identity_t add(const std::vector<column_t> & e) {
+// Unconditionally insert many rows, maintaining RREF.
+template <typename Range>
+std::vector<identity_t> _XorBasisBuilder::add_many(Range r) {
+	RowV added_rows;
+	AugV added_augs;
+	vector<identity_t> ids;
+	for (auto e : r) {
 		Row row = { e };
 		auto id = assign_identity(row);
-		Aug aug = original_aug(id);
-		rref_insert_bunch(rows, augs, { row }, { aug });
+
+		added_rows.push_back(std::move(row));
+		added_augs.push_back(original_aug(id));
+		ids.push_back(id);
 	}
 
-	// Unconditionally insert many rows, maintaining RREF.
-	template <typename Range>
-	std::vector<identity_t> add_many(Range r) {
-		RowV added_rows;
-		AugV added_augs;
-		std::vector<identity_t> ids;
-		for (auto e : r) {
-			Row row = { e };
-			auto id = assign_identity(row);
+	rref_insert_bunch(rows, augs, added_rows, added_augs);
+}
 
-			added_rows.push_back(std::move(row));
-			added_augs.push_back(original_aug(id));
-			ids.push_back(id);
-		}
+// Insert a single row, maintaining RREF... but only if it is not linearly dependent
+//  with rows in the matrix.
+std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(std::vector<column_t> e)
+{
 
-		rref_insert_bunch(rows, augs, added_rows, added_augs);
-	}
+	// copy, add, then revert if an empty row appears.
 
-	// Insert a single row, maintaining RREF... but only if it is not linearly dependent
-	//  with rows in the matrix.
-	std::pair<bool, identity_t> add_if_linearly_independent(std::vector<column_t> e)
-	{
+	// TODO: How (in)-efficient is this?  It begs for that single-row full reduce
+	//        algorithm I'm trying so hard to get rid of :/
 
-		// copy, add, then revert if an empty row appears.
-
-		// TODO: How (in)-efficient is this?  It begs for that single-row full reduce
-		//        algorithm I'm trying so hard to get rid of :/
-
-		AugV augs_copy = augs; // these might change even when a degenerate row is added
-		                       // (TODO: is this actually true? I mean for the rows that
-		                       //        weren't empty to begin with...)
+	AugV augs_copy = augs; // these might change even when a degenerate row is added
+						   // (TODO: is this actually true? I mean for the rows that
+						   //        weren't empty to begin with...)
 
 #ifndef NDEBUG
-		RowV rows_copy = rows;
+	RowV rows_copy = rows;
 #endif
 
-		// The "rank" of the matrix is also where the nonempty/empty boundary lies.
-		// We can look there to tell which kind of row gets added.
+	// The "rank" of the matrix is also where the nonempty/empty boundary lies.
+	// We can look there to tell which kind of row gets added.
 
-		size_t old_rank = ref_rank(rows);
-		identity_t id = add(e); // <-- NOTE: does full RREF transform :(
-		bool success = !is_zero(rows[old_rank]);
+	size_t old_rank = ref_rank(rows);
+	identity_t id = add(e); // <-- NOTE: does full RREF transform :(
+	bool success = !is_zero(rows[old_rank]);
 
-		if (!success) {
-			// aaaaaahhh! added an empty row! revert! revert!
-			augs = std::move(augs_copy);
-			rows.pop();
-		}
+	if (!success) {
+		// aaaaaahhh! added an empty row! revert! revert!
+		augs = std::move(augs_copy);
+		rows.pop();
+	}
 
 #ifndef NDEBUG
-		assert(success == (rows != rows_copy));
+	assert(success == (rows != rows_copy));
 #endif
 
-		return { success, id };
-	}
+	return { success, id };
+}
 
-/*
-	// returns lists of ids of rows which xor-sum to zero.
-	std::vector<std::vector<identity_t>> get_zero_sums() {
-		// TODO
-		std::vector<identity_t> result;
-		for (auto it = this->mat.empty_begin(); it != this->mat.empty_end(); ++it) {
-			result.push_back(it->primary_id);
-		}
-		return result;
-	}
-
-	template <typename Range>
-	void remove_ids(const Range & r) {
-		this->mat.remove_ids(r);
-	}
-*/
-
-	void remove_zero_rows() {
-		size_t rank = ref_rank(rows);
-		rows.resize(rank);
-		augs.resize(rank);
-	}
-};
+void _XorBasisBuilder::remove_zero_rows() {
+	size_t rank = ref_rank(rows);
+	rows.resize(rank);
+	augs.resize(rank);
+}
 
