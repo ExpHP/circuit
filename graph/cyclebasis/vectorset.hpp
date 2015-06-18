@@ -77,6 +77,8 @@ public:
 
 	iterator begin() { return this->elems.begin(); }
 	iterator end() { return this->elems.end(); }
+	const_iterator begin() const { return this->elems.cbegin(); }
+	const_iterator end() const { return this->elems.cend(); }
 	const_iterator cbegin() const { return this->elems.cbegin(); }
 	const_iterator cend() const { return this->elems.cend(); }
 
