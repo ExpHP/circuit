@@ -163,6 +163,22 @@ class MeshCurrentSolver:
 
 		assert len(self._cycle_basis) == len(nx.cycle_basis(self._g))
 
+	def multiply_nearby_resistances(self, v, factor):
+		for t in self._g.neighbors(v):
+			self._g.edge[v][t][EATTR_RESISTANCE] *= factor
+
+		self._cycle_basis      # still valid!
+		self._cycles_from_edge # still valid!
+		self._cycle_currents   = None
+
+	def assign_nearby_resistances(self, v, value):
+		for t in self._g.neighbors(v):
+			self._g.edge[v][t][EATTR_RESISTANCE] = value
+
+		self._cycle_basis      # still valid!
+		self._cycles_from_edge # still valid!
+		self._cycle_currents   = None
+
 	@provides('_cycle_basis')
 	def _acquire_cycle_basis(self):
 		if self._is_planar:

@@ -35,6 +35,8 @@ SELECTION_MODES = {
 }
 DELETION_MODES = {
 	'remove':   node_deletion.annihilation(),
+	'multiply': node_deletion.multiply_resistance(1000., idempotent=False),
+	'assign':   node_deletion.multiply_resistance(1000., idempotent=True),
 }
 
 def main():
