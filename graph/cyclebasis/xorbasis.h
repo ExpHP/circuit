@@ -22,6 +22,22 @@ typedef std::vector<RowAug> RowAugV;
 
 //------------------------------------------------------------------------------
 
+// anonymous namespace to avoid redefinition by multiple object files that include the header
+// (TODO: is this a legitimate reason to use one?)
+namespace {
+
+	RowV into_row_v(const std::vector<std::vector<column_t>> & rows) {
+		RowV result;
+		for (auto & e : rows) {
+			result.emplace_back(e);
+		}
+		return result;
+	}
+
+}
+
+//------------------------------------------------------------------------------
+
 // The class primarily exported from this module. (with an underscore, so that
 //  the bare name may be given to a python wrapper class)
 class _XorBasisBuilder
@@ -55,20 +71,33 @@ public:
 	{ }
 
 	// Unconditionally insert a row, maintaining RREF.
+	identity_t add(Row);
+
 	template <typename ColumnRange>
-	identity_t add(const ColumnRange & e);
+	identity_t add(const ColumnRange & e) { return add(Row {e}); }
 
 	// Unconditionally insert many rows, maintaining RREF.
+	std::vector<identity_t> add_many(RowV);
+
 	template <typename ColumnRangeRange>
-	std::vector<identity_t> add_many(const ColumnRangeRange & r);
+	std::vector<identity_t> add_many(const ColumnRangeRange & r) { return add_many(into_row_v(r)); }
 
 	// Insert a single row, maintaining RREF... but only if it is not linearly dependent
 	//  with rows in the matrix.
+	std::pair<bool, identity_t> add_if_linearly_independent(Row);
+
 	template <typename ColumnRange>
-	std::pair<bool, identity_t> add_if_linearly_independent(const ColumnRange & e);
+	std::pair<bool, identity_t> add_if_linearly_independent(const ColumnRange & e) {
+		return add_if_linearly_independent(Row {e});
+	}
+
+	// Removes the specified vectors from the basis.  The resulting state of the basis will be
+	//   as though the vectors were never added in the first place.
+	void remove_ids(Aug);
 
 	template <typename IdentityRange>
-	void remove_ids(const IdentityRange & e);
+	void remove_ids(const IdentityRange & e) { return remove_ids(Aug {e}); }
+
 /*
 	// returns lists of ids of rows which xor-sum to zero.
 	std::vector<std::vector<identity_t>> get_zero_sums();

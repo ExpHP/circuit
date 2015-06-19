@@ -528,44 +528,36 @@ void ref_cleanup_completely_empty_rows(RowV & rows, AugV & augs)
 
 // Unconditionally add a vector to the basis.  Returns its newly assigned identity.
 // (possibly causing a linearly dependent group to emerge)
-template <typename ColumnRange>
-identity_t _XorBasisBuilder::add(const ColumnRange & e)
+identity_t _XorBasisBuilder::add(Row row)
 {
-	Row row = { e };
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
-	rref_insert_bunch(rows, augs, { row }, { aug });
+	rref_insert_bunch(rows, augs, { std::move(row) }, { std::move(aug) });
 	return id;
 }
 
 // Unconditionally add many vectors to the basis.  Returns their newly assigned identities.
 // (possibly causing linearly dependent groups to emerge)
-template <typename ColumnRangeRange>
-std::vector<identity_t> _XorBasisBuilder::add_many(const ColumnRangeRange & r)
+std::vector<identity_t> _XorBasisBuilder::add_many(RowV added_rows)
 {
-	RowV added_rows;
 	AugV added_augs;
 	vector<identity_t> ids;
-	for (auto e : r) {
-		Row row = { e };
-		auto id = assign_identity(row);
+	for (auto & row : added_rows) {
+		auto id = assign_identity(std::move(row));
 
-		added_rows.push_back(std::move(row));
 		added_augs.push_back(original_aug(id));
 		ids.push_back(id);
 	}
 
-	rref_insert_bunch(rows, augs, added_rows, added_augs);
+	rref_insert_bunch(rows, augs, std::move(added_rows), std::move(added_augs));
 	return std::move(ids);
 }
 
 // Add a vector to the basis, but only if it is not linearly dependent with vectors
 //  already in the basis.  Returns (success, id).
 // Note: the value of id is only meaningful if success is true.
-template <typename ColumnRange>
-std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(const ColumnRange & e)
+std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row row)
 {
-	Row row = { e };
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
 
@@ -587,8 +579,7 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(const 
 }
 
 // Modifies the basis to remove the specified vectors.
-template <typename IdentityRange>
-void _XorBasisBuilder::remove_ids(const IdentityRange & ids)
+void _XorBasisBuilder::remove_ids(Aug ids)
 {
 	// Brute force method
 	for (auto id: ids) {
@@ -602,12 +593,13 @@ void _XorBasisBuilder::remove_ids(const IdentityRange & ids)
 		}
 	}
 
-	std::tie(rows,augs) = transform_to_rref(rows, augs);
+	// ouch
+	std::tie(rows,augs) = transform_to_rref(std::move(rows), std::move(augs));
 
 	// There should be precisely this many rows that are *completely*
 	//  empty (both row and aug).  Clean them out.
 	size_t old_size = rows.size();
-	size_t removed_count = ids.cend() - ids.cbegin();
+	size_t removed_count = ids.size();
 
 	ref_cleanup_completely_empty_rows(rows, augs);
 	assert(rows.size() == old_size - removed_count);
