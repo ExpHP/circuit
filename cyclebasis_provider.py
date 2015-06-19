@@ -1,4 +1,5 @@
 
+import json
 import networkx as nx
 import graph.cyclebasis.planar
 from graph.cyclebasis.builder import CycleBasisBuilder
@@ -35,7 +36,9 @@ class from_file:
 		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
-		raise RuntimeError('not implemented!') # XXX
+		with open(self.path) as f:
+			s = f.read()
+		return json.loads(s)
 
 	def info(self):
 		return {
