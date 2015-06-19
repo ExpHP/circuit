@@ -180,7 +180,7 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substep
 
 	measured_edge = get_measured_edge(g)
 	choices = get_deletable_nodes(g)
-	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), is_planar=cbprovider.is_planar())
+	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), cbupdater=cbprovider.cbupdater())
 
 	past_selections = []
 

@@ -137,31 +137,31 @@ class provides:
 
 class MeshCurrentSolver:
 
-	def __init__(self, circuit, cyclebasis=None, is_planar=False):
+	def __init__(self, circuit, cyclebasis, cbupdater):
 		validate_circuit(circuit)
 
 		self._g = circuit
-		self._is_planar = is_planar
+		self._cbupdater = cbupdater
+
+		self._cbupdater.init(cyclebasis)
 
 		# Invalidate everything
-		self._cycle_basis      = cyclebasis
+		self._cycle_basis      = None
 		self._cycles_from_edge = None
 		self._cycle_currents   = None
 
 	def delete_node(self, v):
 		self._g.remove_node(v)
+		self._cbupdater.remove_vertex(self._g, v)
 
-		# Update what we can
-		if self._is_planar and self._cycle_basis is not None:
-			self._cycle_basis      = graph.cyclebasis.planar.without_vertex(self._cycle_basis, v)
-			self._cycles_from_edge = None
-			self._cycle_currents   = None
-		else:
-			self._cycle_basis      = None
-			self._cycles_from_edge = None
-			self._cycle_currents   = None
-
-		assert len(self._cycle_basis) == len(nx.cycle_basis(self._g))
+		# (okay so the point of this stuff below isn't quite so clear when everything
+		#  keeps getting reset all at the same time.  Reminder to self that the intent
+		#  was to be able to allow some actions to selectively invalidate things)
+		#
+		# (or alternatively: reminder to self to tear this useless crap out)
+		self._cycle_basis      = None
+		self._cycles_from_edge = None
+		self._cycle_currents   = None
 
 	def multiply_nearby_resistances(self, v, factor):
 		for t in self._g.neighbors(v):
@@ -181,11 +181,7 @@ class MeshCurrentSolver:
 
 	@provides('_cycle_basis')
 	def _acquire_cycle_basis(self):
-		if self._is_planar:
-			return compute_planar_cycle_basis(self._g)
-		else:
-			return compute_default_cycle_basis(self._g)
-		assert False
+		return self._cbupdater.get_cyclebasis()
 
 	@provides('_cycles_from_edge')
 	def _acquire_cycles_from_edge(self):
@@ -278,6 +274,7 @@ def _copy_graph_without_attributes(g):
 	return result
 
 def test_two_separate_loops():
+	import cyclebasis_provider
 	# A circuit with two connected components.
 	g = nx.Graph()
 	g.add_path('abca')
@@ -289,13 +286,16 @@ def test_two_separate_loops():
 	builder.make_battery('x', 'y', 5.0)
 	builder.make_resistor('y', 'z', 1.0)
 	builder.make_resistor('z', 'x', 1.0)
+
 	circuit = builder.build()
-	solver = MeshCurrentSolver(circuit, is_planar=False)
+	cbprovider = cyclebasis_provider.last_resort()
+	solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(g), cbprovider.cbupdater())
 
 	for s,t in ('ab', 'bc', 'ca', 'xy', 'yz', 'zx'):
 		assertNear(solver.get_current(s,t), +2.5)
 
 def test_two_loop_circuit():
+	import cyclebasis_provider
 	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
 	g = nx.Graph()
 	g.add_path(['Up','Rt','Dn','Lt','Up'])
@@ -306,8 +306,10 @@ def test_two_loop_circuit():
 	builder.make_resistor('Up', 'Dn', 2.0)
 	builder.make_resistor('Up', 'Lt', 4.0)
 	builder.make_resistor('Up', 'Rt', 1.0)
+
 	circuit = builder.build()
-	solver = MeshCurrentSolver(circuit, is_planar=False)
+	cbprovider = cyclebasis_provider.last_resort()
+	solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(g), cbprovider.cbupdater())
 
 	assertNear(solver.get_current('Dn','Lt'), +5.0)
 	assertNear(solver.get_current('Dn','Rt'), -1.0)
