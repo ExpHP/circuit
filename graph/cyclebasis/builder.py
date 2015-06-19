@@ -10,6 +10,8 @@ import graph.cyclebasis.cXorBasis as xorbasis
 
 import graph.path as vpath
 
+from util import assertRaises
+
 __all__ = [
 	'CycleBasisBuilder',
 ]
@@ -36,8 +38,6 @@ class CycleBasisBuilder:
 		ecycles = list(map(self.edge_mapper.map_path, vcycles))
 		identities = self.basis.add_many(ecycles)
 
-		# TODO Test error
-		print(self.basis.get_zero_sums())
 		if len(self.basis.get_zero_sums()) > 0:
 			raise RuntimeError("from_basis_cycles() was provided linearly dependent cycles!")
 
@@ -62,10 +62,44 @@ class CycleBasisBuilder:
 			assert identity not in self.cycles_by_id
 			self.cycles_by_id[identity] = cycle
 
-# XXX REPLACE
-#		assert len(list(self.basis.get_linearly_dependent_ids())) == 0 # class invariant
-
 		return success
+
+	# Updates the cycle basis to account for the removal of a vertex from the graph.
+	def remove_vertex(self, v):
+		import networkx as nx
+
+		badpaths = self.__pop_all_with_vertex(v)
+
+		if len(badpaths) == 0: # degenerate case
+			return
+
+		g = nx.Graph()
+		for path in badpaths:
+			g.add_path(path)
+
+		g.remove_node(v)
+
+		rebuilt = nx.cycle_basis(g)
+		for cycle in rebuilt:
+			cycle.append(cycle[0])
+			self.add_if_independent(cycle)
+
+	# Removes all cycles with vertex v and returns them
+	def __pop_all_with_vertex(self, v):
+		invalidated = [(i,path) for (i,path) in self.cycles_by_id.items() if v in path]
+
+		if len(invalidated) == 0: # degenerate case for zip
+			return []
+
+		ids, paths = zip(*invalidated)
+
+		for i in ids:
+			del self.cycles_by_id[i]
+
+		# remove the corresponding rows from the rref bit matrix
+		self.basis.remove_ids(ids)
+
+		return paths
 
 #----------------------
 
@@ -90,3 +124,5 @@ assert _cbb1.add_if_independent('dcbd')
 assert not _cbb1.add_if_independent('acdba')
 assert not _cbb1.add_if_independent('abdca')
 
+# CycleBasisBuilder with degenerate cycle basis
+assertRaises(RuntimeError, CycleBasisBuilder.from_basis_cycles, ['1231', '4234', '42134'])

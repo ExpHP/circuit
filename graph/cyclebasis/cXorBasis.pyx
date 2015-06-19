@@ -47,7 +47,7 @@ cdef extern from "xorbasis.h":
         pair[bint,size_t] add_if_linearly_independent(vector[uint])
         vector[vector[size_t]] get_zero_sums()
 #        void remove_from_each_zero_sum(vector[size_t])
-#        void remove_ids(vector[size_t])
+        void remove_ids(vector[size_t])
 #        void remove_linearly_dependent_ids()
 #        bint has_linearly_dependent_rows()
 
@@ -84,9 +84,9 @@ cdef class XorBasisBuilder:
 #    def get_linearly_dependent_ids(self):
 #        return self.thisptr.get_linearly_dependent_ids()
 
-#    def remove_ids(self, it):
-#        cdef vector[size_t] ids = list(it)
-#        self.thisptr.remove_ids(ids)
+    def remove_ids(self, it):
+        cdef vector[size_t] ids = list(it)
+        self.thisptr.remove_ids(ids)
 
 #    def remove_linearly_dependent_ids(self):
 #        self.thisptr.remove_linearly_dependent_ids()

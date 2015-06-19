@@ -79,7 +79,7 @@ class builder_cbupdater:
 	def init(self, cycles):
 		self.builder = CycleBasisBuilder.from_basis_cycles(cycles)
 	def remove_vertex(self, g, v):
-		self.builder.remove_vertex(g, v)
+		self.builder.remove_vertex(v)
 	def get_cyclebasis(self):
 		return self.builder.cycles
 
