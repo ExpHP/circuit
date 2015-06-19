@@ -281,12 +281,6 @@ def other_endpoint_nx(e, s):
 	else:
 		raise ValueError('{} is not an endpoint of the edge ({},{})'.format(s,v1,v2))
 
-def to_edge_path(circuit, vertex_path):
-	# HACK should be SingleGraph.get_edge instead of BaseGraph.get_arbitrary_edge
-	#     but I haven't implemented the former class yet
-	# or better yet just get rid of my silly pointless incomplete graph library >_>
-	return [circuit.arbitrary_edge(u,v) for (u,v) in vpath.edges(vertex_path)]
-
 def copy_without_attributes_nx(g):
 	result = nx.Graph()
 	result.add_nodes_from(g)
