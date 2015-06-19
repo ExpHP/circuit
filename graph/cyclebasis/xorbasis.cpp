@@ -541,7 +541,7 @@ std::vector<identity_t> _XorBasisBuilder::add_many(RowV added_rows)
 	AugV added_augs;
 	vector<identity_t> ids;
 	for (auto & row : added_rows) {
-		auto id = assign_identity(std::move(row));
+		auto id = assign_identity(row);
 
 		added_augs.push_back(original_aug(id));
 		ids.push_back(id);
