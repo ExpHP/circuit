@@ -115,6 +115,28 @@ def collect_good_cycles(cellrows, cellcols):
 			Mo2,   = vertex_groups[(i+1)%len(vertex_groups)]
 			result.append([Mo1, S1, Mo2, S2, Mo1])
 
+	# Collect cycles between vertices at each end with their corresponding battery vertex
+	nrows,ncols = hex_grid_dims(cellrows,cellcols)
+	bot, top = battery_vertices()
+	for vbattery, row, want_upper in (
+		(bot, 0, False), (top, nrows-1, True),
+	):
+		goodcols = [col for col in range(ncols) if want_upper == hex_is_upper(row,col)]
+
+		# A cycle between each pair of end vertices and the battery
+		for col in goodcols[:-1]:
+			v1 = hex_vertices(row,col  )[0]
+			v2 = hex_vertices(row,col+1)[0]
+			v3 = hex_vertices(row,col+2)[0]
+			result.append([v1, v2, v3, vbattery, v1])
+
+		# When an end is S-terminated, there also exists a cycle with both S atoms
+		for col in goodcols:
+			if not hex_is_Mo(row,col):
+				S1,S2 = hex_vertices(row,col  )
+				Mo,   = hex_vertices(row,col+1)
+				result.append([S1, Mo, S2, vbattery, S1])
+
 	return result
 
 def write_cyclebasis(path, cb):
