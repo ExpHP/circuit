@@ -70,20 +70,23 @@ public:
 	, originals()
 	{ }
 
-	// Unconditionally insert a row, maintaining RREF.
+	// Unconditionally add a vector to the basis.  Returns its newly assigned identity.
+	// (possibly causing a linearly dependent group to emerge)
 	identity_t add(Row);
 
 	template <typename ColumnRange>
 	identity_t add(const ColumnRange & e) { return add(Row {e}); }
 
-	// Unconditionally insert many rows, maintaining RREF.
+	// Unconditionally add many vectors to the basis.  Returns their newly assigned identities.
+	// (possibly causing linearly dependent groups to emerge)
 	std::vector<identity_t> add_many(RowV);
 
 	template <typename ColumnRangeRange>
 	std::vector<identity_t> add_many(const ColumnRangeRange & r) { return add_many(into_row_v(r)); }
 
-	// Insert a single row, maintaining RREF... but only if it is not linearly dependent
-	//  with rows in the matrix.
+	// Add a vector to the basis, but only if it is not linearly dependent with vectors
+	//  already in the basis.  Returns (success, id).
+	// Note: the value of id is only meaningful if success is true.
 	std::pair<bool, identity_t> add_if_linearly_independent(Row);
 
 	template <typename ColumnRange>
@@ -98,12 +101,18 @@ public:
 	template <typename IdentityRange>
 	void remove_ids(const IdentityRange & e) { return remove_ids(Aug {e}); }
 
-/*
-	// returns lists of ids of rows which xor-sum to zero.
-	std::vector<std::vector<identity_t>> get_zero_sums();
+	// Returns a list of lists of ids, each of which represent previously-inserted vectors
+	//  that sum to zero.
+	// The ordering of the returned lists is guaranteed to remain fixed for as long as the
+	//  basis is not modified. (this is for use together with remove_from_each_zero_sum())
+	std::vector<std::vector<identity_t>> get_zero_sums() const;
 
-	void remove_ids(const std::vector<identity_t> & r);
-*/
+	// Removes the specified vectors from the basis, provided that:
+	//   * One is provided from every list returned by get_zero_sums(), IN ORDER.
+	//     That is, the `i`th id provided must be contained in the `i`th zero sum.
+	//   * No id is specified twice.
+	// After this method, all vectors remaining in the basis will be linearly independent.
+	void remove_from_each_zero_sum(std::vector<identity_t>);
 
 	const RowV & get_rows() const { return rows; }
 	const AugV & get_augs() const { return augs; }

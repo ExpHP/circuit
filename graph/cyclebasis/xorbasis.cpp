@@ -526,8 +526,8 @@ void ref_cleanup_completely_empty_rows(RowV & rows, AugV & augs)
 
 //------------------------------------------------------------------------------
 
-// Unconditionally add a vector to the basis.  Returns its newly assigned identity.
-// (possibly causing a linearly dependent group to emerge)
+// FIXME shouldn't this be using rref_insert?
+// TODO  do I even need this method to begin with?
 identity_t _XorBasisBuilder::add(Row row)
 {
 	auto id = assign_identity(row);
@@ -536,8 +536,6 @@ identity_t _XorBasisBuilder::add(Row row)
 	return id;
 }
 
-// Unconditionally add many vectors to the basis.  Returns their newly assigned identities.
-// (possibly causing linearly dependent groups to emerge)
 std::vector<identity_t> _XorBasisBuilder::add_many(RowV added_rows)
 {
 	AugV added_augs;
@@ -553,9 +551,21 @@ std::vector<identity_t> _XorBasisBuilder::add_many(RowV added_rows)
 	return std::move(ids);
 }
 
-// Add a vector to the basis, but only if it is not linearly dependent with vectors
-//  already in the basis.  Returns (success, id).
-// Note: the value of id is only meaningful if success is true.
+vector<vector<identity_t>> _XorBasisBuilder::get_zero_sums() const
+{
+	vector<vector<identity_t>> result;
+	for (size_t i=ref_rank(rows); i<rows.size(); i++) {
+		// class invariant (no method leaves behind any completely empty rows in the matrix)
+		assert(!augs[i].empty());
+
+		result.emplace_back(augs[i].cbegin(), augs[i].cend());
+	}
+	return result;
+}
+
+// TODO
+// void _XorBasisBuilder::remove_from_each_zero_sum(std::vector<identity_t>);
+
 std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row row)
 {
 	auto id = assign_identity(row);
@@ -578,7 +588,6 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row ro
 	assert(false);
 }
 
-// Modifies the basis to remove the specified vectors.
 void _XorBasisBuilder::remove_ids(Aug ids)
 {
 	// Brute force method
@@ -605,9 +614,9 @@ void _XorBasisBuilder::remove_ids(Aug ids)
 	assert(rows.size() == old_size - removed_count);
 }
 
+// TODO  do I even need this method to begin with?
 void _XorBasisBuilder::remove_zero_rows() {
 	size_t rank = ref_rank(rows);
 	rows.resize(rank);
 	augs.resize(rank);
 }
-

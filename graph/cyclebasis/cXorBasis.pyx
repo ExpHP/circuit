@@ -1,6 +1,12 @@
 
 # cXorBasis.pyx: Cython bindings for xorbasis.hpp
 
+# This provides a C++ implementation of the XorBasisBuilder class, which manages an RREF bit
+#   matrix for the purposes of building e.g. a cycle basis.
+# XorBasisBuilder is currently a class with very limited offerings; it basically only offers
+#   precisely the functionality required by CycleBasisBuilder, and no more than that.
+# (that is to say, perhaps it might be better named "CycleBasisBuilder_Impl" :P)
+
 from libcpp.vector cimport vector
 from libcpp.utility cimport pair
 from cython.operator cimport dereference as deref, preincrement as inc
@@ -39,7 +45,8 @@ cdef extern from "xorbasis.h":
         size_t add(vector[uint])
         vector[size_t] add_many(vector[vector[uint]])
         pair[bint,size_t] add_if_linearly_independent(vector[uint])
-#        vector[size_t] get_linearly_dependent_ids()
+        vector[vector[size_t]] get_zero_sums()
+#        void remove_from_each_zero_sum(vector[size_t])
 #        void remove_ids(vector[size_t])
 #        void remove_linearly_dependent_ids()
 #        bint has_linearly_dependent_rows()
@@ -66,6 +73,13 @@ cdef class XorBasisBuilder:
         cdef vector[uint] vec = list(row)
         cdef pair[bint,size_t] p = self.thisptr.add_if_linearly_independent(vec)
         return (bool(p.first), p.second)
+
+    def get_zero_sums(self):
+        return self.thisptr.get_zero_sums()
+
+#    def remove_from_each_zero_sum(self, ids):
+#        cdef vector[size_t] vec = list(ids)
+#        self.thisptr.remove_from_each_zero_sum(vec)
 
 #    def get_linearly_dependent_ids(self):
 #        return self.thisptr.get_linearly_dependent_ids()

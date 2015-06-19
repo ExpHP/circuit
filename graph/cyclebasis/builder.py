@@ -1,9 +1,12 @@
 
 # Two versions of XorBasis, c one should be faster
-try:
-	import graph.cyclebasis.cXorBasis as xorbasis
-except ImportError:
-	import graph.cyclebasis.pyXorBasis as xorbasis
+
+# TODO: Python implementation is unavaible until its API is brought back up to speed
+#try:
+#	import graph.cyclebasis.cXorBasis as xorbasis
+#except ImportError:
+#	import graph.cyclebasis.pyXorBasis as xorbasis
+import graph.cyclebasis.cXorBasis as xorbasis
 
 import graph.path as vpath
 
@@ -20,6 +23,29 @@ class CycleBasisBuilder:
 	@property
 	def cycles(self):
 		return self.cycles_by_id.values()
+
+	# Constructs a CycleBasisBuilder from a set of cycles known to be linearly independent.
+	# This computes the underlying matrix through a more efficient method than repeated calls
+	#  to add_if_linearly_independent will provide.
+	@classmethod
+	def from_basis_cycles(cls, vcycles):
+
+		self = cls()
+
+		vcycles = list(vcycles)
+		ecycles = list(map(self.edge_mapper.map_path, vcycles))
+		identities = self.basis.add_many(ecycles)
+
+		# TODO Test error
+		print(self.basis.get_zero_sums())
+		if len(self.basis.get_zero_sums()) > 0:
+			raise RuntimeError("from_basis_cycles() was provided linearly dependent cycles!")
+
+		for identity,cycle in zip(identities, vcycles):
+			self.cycles_by_id[identity] = cycle
+
+		assert len(vcycles) == len(self.cycles_by_id)
+		return self
 
 	# If the provided cycle is linearly independent from the cycles already in
 	#  the cyclebasis, adds the cycle and returns True.
