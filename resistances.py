@@ -35,6 +35,7 @@ SELECTION_MODES = {
 }
 DELETION_MODES = {
 	'remove':   node_deletion.annihilation(),
+	'multiply': node_deletion.scalar_multiply(1000.),
 }
 
 def main():
