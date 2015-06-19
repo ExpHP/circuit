@@ -4,7 +4,7 @@
 
 __all__ = [
 	'annihilation',
-	'scalar_multiply',
+	'multiply_resistance',
 ]
 
 class annihilation:
@@ -15,17 +15,24 @@ class annihilation:
 	def info(self):
 		return {'mode': 'direct removal'}
 
-class scalar_multiply:
-	''' Represents a defect by multiplying the resistance of each edge connected to
-	    the vertex by a constant factor. '''
-	def __init__(self, factor):
-		self.factor = float(factor)
+class multiply_resistance:
+	''' Represents a defect by modifying the resistances of edges connected to the vertex. '''
+	def __init__(self, factor, idempotent):
+		assert isinstance(factor, float)
+		assert isinstance(idempotent, bool)
+		self.factor = factor
+		self.idempotent = idempotent
 
 	def deletion_func(self, solver, v):
-		solver.multiply_nearby_resistances(v, self.factor)
+		if self.idempotent:
+			solver.assign_nearby_resistances(v, self.factor)
+		else:
+			solver.multiply_nearby_resistances(v, self.factor)
 
 	def info(self):
 		return {
 			'mode': 'multiply resistance',
 			'factor': self.factor,
+			'idempotent': self.idempotent,
 		}
+
