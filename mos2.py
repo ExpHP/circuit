@@ -40,7 +40,7 @@ def main(argv):
 	if args.output_cb is not None:
 		if args.verbose:
 			print('Collecting desirable cycles')
-		good = collect_good_cycles(cellrows,cellcols)
+		good = collect_good_cycles(g, cellrows, cellcols)
 
 		assert validate_paths(g, good)
 
@@ -89,7 +89,7 @@ def save_circuit(path, g, xys, deletable, measure_edge):
 
 # produces a list of short, desirable cycles (not necessarily linearly independent)
 #  which may serve as the foundation for a complete cyclebasis (via build_cyclebasis)
-def collect_good_cycles(cellrows, cellcols):
+def collect_good_cycles(g, cellrows, cellcols):
 	result = []
 
 	for cellrow,cellcol in all_cells(cellrows,cellcols):
@@ -115,27 +115,9 @@ def collect_good_cycles(cellrows, cellcols):
 			Mo2,   = vertex_groups[(i+1)%len(vertex_groups)]
 			result.append([Mo1, S1, Mo2, S2, Mo1])
 
-	# Collect cycles between vertices at each end with their corresponding battery vertex
-	nrows,ncols = hex_grid_dims(cellrows,cellcols)
-	bot, top = battery_vertices()
-	for vbattery, row, want_upper in (
-		(bot, 0, False), (top, nrows-1, True),
-	):
-		goodcols = [col for col in range(ncols) if want_upper == hex_is_upper(row,col)]
-
-		# A cycle between each pair of end vertices and the battery
-		for col in goodcols[:-1]:
-			v1 = hex_vertices(row,col  )[0]
-			v2 = hex_vertices(row,col+1)[0]
-			v3 = hex_vertices(row,col+2)[0]
-			result.append([v1, v2, v3, vbattery, v1])
-
-		# When an end is S-terminated, there also exists a cycle with both S atoms
-		for col in goodcols:
-			if not hex_is_Mo(row,col):
-				S1,S2 = hex_vertices(row,col  )
-				Mo,   = hex_vertices(row,col+1)
-				result.append([S1, Mo, S2, vbattery, S1])
+	# a bunch of length 4 cycles between battery vertices and the edge vertices
+	for batv in battery_vertices():
+		result.extend(cycles_upto(g, batv, 4))
 
 	return result
 
@@ -390,6 +372,35 @@ def battery_xy_dict(cellrows, cellcols):
 		bot: (xmin - 2.0, ymin - 1.0 - 0.1 * cellrows),
 		top: (xmin - 2.0, ymax + 1.0 + 0.1 * cellrows),
 	}
+
+#-----------------------------------------------------------
+# Collect cycles up to n edges long starting at v.
+def cycles_upto(g, v, n):
+	cycles = []
+	for nbr in g.neighbors(v):
+		cycles.extend(cycles_upto_impl(g, n-1, (v,nbr)))
+
+	# filter out duplicate cycles in opposite directions
+	filtered = set()
+	for x in cycles:
+		if x[:-1] not in filtered:
+			filtered.add(x)
+
+	return filtered
+
+def cycles_upto_impl(g, n, path):
+	assert len(path) >= 2
+
+	if path[-1] == path[0]:
+		yield path
+		return
+
+	if n == 0:
+		return
+
+	for nbr in g.neighbors(path[-1]):
+		if (nbr != path[-2]) and (nbr not in path[1:]):
+			yield from cycles_upto_impl(g, n-1, path + (nbr,))
 
 #-----------------------------------------------------------
 
