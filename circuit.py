@@ -120,73 +120,78 @@ def sane_equals(a, b):
 
 #------------------------------------------------------------
 
-
-# Sentinels
-RECOMPUTE = object()
-KEEP = object()
-
-# NOTE: I still think this is a terrible idea, I just don't have any better idea
-#       on how to defer (potentially useless) computations until they're needed
-#       which doesn't drown the code in boilerplate.
 class cached_property:
 	''' A member function decorator which provides a clean way to defer computation.
 
-	A property which is automatically backed by a member, with some slightly unusual
-	 semantics for controlling how it is updated.
+	A property-like object which is automatically backed by a member.
+	A value may be assigned to it via ``=`` (like a property) or by explicitly calling
+	 ``put(value)``.  To obtain its value, one must explicitly call ``get()``; if no
+	 value has been stored, it will call the decorated function to compute a new value,
+	 storing and returning it.
 
-	The first time the member is accessed (if it hasn't been assigned a value), it
-	 will call the decorated function, store and return the result.
-	In most cases, assigning a value to the property will simply store that value.
-	But there two special values:
-
-	 * Assigning ``RECOMPUTE`` resets it. (next getter will call the function again)
-	 * Assigning ``KEEP`` is a no-op. (just there for the reader's sake)
+	Invoking ``invalidate()`` will reset the member (making it as though no value has
+	 been set).  This allows one to arbitrarily defer an expensive computation by invoking
+	 ``invalidate()`` now and only invoking ``get()`` once the value is needed (which will
+	 then perform the computation).
 
 	Example:
 
 	>>> class Foo:
-	...   @cached_property()
+	...   @cached_property
 	...   def x(self):
 	...     print('computing!!!')
 	...     return 10
 	...
-	>>>
 	>>> foo = Foo()
-	>>> foo.x             # => 10, prints 'computing!!!'
-	>>> foo.x             # => 10
+	>>> foo.x.get()        # prints 'computing!!!', => 10
+	>>> foo.x.get()        # => 10
+	>>>
 	>>> foo.x = 3
-	>>> foo.x             # => 3
-	>>> foo.x = KEEP
-	>>> foo.x             # => 3
-	>>> foo.x = RECOMPUTE
-	>>> foo.x             # => 10, prints 'computing!!!'
+	>>> foo.x.put(3)       # also valid
+	>>> foo.x.get()        # => 3
+	>>>
+	>>> foo.x.invalidate()
+	>>> foo.x.get()        # prints 'computing!!!', => 10
 	'''
-	def __init__(self, recompute=RECOMPUTE, keep=KEEP):
-		self.member = self.__generate_member_name()
-		self.recompute = recompute
-		self.keep = keep
+	def __init__(self, func):
+		self.member   = self.__generate_member_name()
+		self.sentinel = object()
+		self.func     = func
+
+	def __get__(self, obj, objtype=None):
+		return bound_cached_property(self, obj)
+
+	def __set__(self, obj, value):
+		self.put(obj, value)
 
 	def __generate_member_name(self):
+		# FIXME I imagine this doesn't play well with serialization
 		return '_cached__{}'.format(id(self))
 
-	def __call__(self, func):
+	def get(self, obj):
+		if getattr(obj, self.member, self.sentinel) is self.sentinel:
+			setattr(obj, self.member, self.func(obj))
+		assert getattr(obj, self.member) is not self.sentinel
+		return getattr(obj, self.member)
 
-		def getmbr(obj):      return getattr(obj, self.member)
-		def setmbr(obj, val): setattr(obj, self.member, val)
+	def put(self, obj, value):
+		setattr(obj, self.member, value)
 
-		def getter(obj):
-			if sane_equals(getmbr(obj), self.recompute):
-				setmbr(obj, func(obj))
-			assert not sane_equals(getmbr(obj), self.recompute)
-			assert not sane_equals(getmbr(obj), self.keep)
-			return getmbr(obj)
+	def invalidate(self, obj):
+		setattr(obj, self.member, self.sentinel)
 
-		def setter(obj, value):
-			if not sane_equals(value, self.keep):
-				setmbr(obj, value)
+class bound_cached_property:
+	__doc__ = cached_property.__doc__
 
-		return property(getter, setter)
+	def __init__(self, prop, obj):
+		self.prop = prop
+		self.obj = obj
 
+	def get(self):        return self.prop.get(self.obj)
+	def put(self, value): self.prop.put(self.obj, value)
+	def invalidate(self): self.prop.invalidate(self.obj)
+
+#------------------------------------------------------------
 
 class MeshCurrentSolver:
 
@@ -199,53 +204,53 @@ class MeshCurrentSolver:
 		self.cbupdater.init(cyclebasis)
 
 		# Invalidate everything
-		self.cyclebasis       = RECOMPUTE
-		self.cycles_from_edge = RECOMPUTE
-		self.cycle_currents   = RECOMPUTE
+		self.cyclebasis.invalidate()
+		self.cycles_from_edge.invalidate()
+		self.cycle_currents.invalidate()
 
 	def delete_node(self, v):
 		self.g.remove_node(v)
 		self.cbupdater.remove_vertex(self.g, v)
 
-		self.cyclebasis       = RECOMPUTE
-		self.cycles_from_edge = RECOMPUTE
-		self.cycle_currents   = RECOMPUTE
+		self.cyclebasis.invalidate()
+		self.cycles_from_edge.invalidate()
+		self.cycle_currents.invalidate()
 
 	def multiply_nearby_resistances(self, v, factor):
 		for t in self.g.neighbors(v):
 			self.g.edge[v][t][EATTR_RESISTANCE] *= factor
 
-		self.cyclebasis       = KEEP
-		self.cycles_from_edge = KEEP
-		self.cycle_currents   = RECOMPUTE
+		self.cyclebasis       # still valid!
+		self.cycles_from_edge # still valid!
+		self.cycle_currents.invalidate()
 
 	def assign_nearby_resistances(self, v, value):
 		for t in self.g.neighbors(v):
 			self.g.edge[v][t][EATTR_RESISTANCE] = value
 
-		self.cyclebasis       = KEEP
-		self.cycles_from_edge = KEEP
-		self.cycle_currents   = RECOMPUTE
+		self.cyclebasis       # still valid!
+		self.cycles_from_edge # still valid!
+		self.cycle_currents.invalidate()
 
-	@cached_property()
+	@cached_property
 	def cyclebasis(self):
 		return self.cbupdater.get_cyclebasis()
 
-	@cached_property()
+	@cached_property
 	def cycles_from_edge(self):
-		return compute_cycles_from_edge(self.g, self.cyclebasis)
+		return compute_cycles_from_edge(self.g, self.cyclebasis.get())
 
-	@cached_property()
+	@cached_property
 	def cycle_currents(self):
-		V = compute_voltage_vector(self.g, self.cyclebasis)
-		R = compute_resistance_matrix(self.g, self.cyclebasis, self.cycles_from_edge)
+		V = compute_voltage_vector(self.g, self.cyclebasis.get())
+		R = compute_resistance_matrix(self.g, self.cyclebasis.get(), self.cycles_from_edge.get())
 
-		return compute_cycle_currents(R, V, self.cyclebasis)
+		return compute_cycle_currents(R, V, self.cyclebasis.get())
 
 	def get_current(self, s, t):
-		ecycles = util.edictget(self.cycles_from_edge, (s,t))
+		ecycles = util.edictget(self.cycles_from_edge.get(), (s,t))
 		esign   = circuit_edge_sign(self.g, s, t)
-		return esign * sum(self.cycle_currents[i] * csign for i, csign in ecycles)
+		return esign * sum(self.cycle_currents.get()[i] * csign for i, csign in ecycles)
 
 #------------------------------------------------------------
 
