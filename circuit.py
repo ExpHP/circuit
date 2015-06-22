@@ -109,30 +109,83 @@ def circuit_path_voltage(circuit, path):
 
 #------------------------------------------------------------
 
-# @provides(member_name):
-# Member function decorator for a function which caches its results in a member of
-#  the class.
+def sane_equals(a, b):
+	''' An alternative to ``==`` which pounds numpy into freaking submission die die die '''
+	if isinstance(a, np.ndarray) != isinstance(b, np.ndarray):
+		return False
+	elif isinstance(a, np.ndarray):
+		return (a == b).all() # numpy: polymorphism wats that
+	else:
+		return a == b
 
-# To use properly, set the member to None to signal when it has become invalidated.
-# Whenever the stored value is needed, call the decorated function instead of accessing
-#  the member directly.
+#------------------------------------------------------------
 
-# TODO: Look into better, more idiomatic solutions to the problem of cache invalidation;
-# This will clearly become unmaintainable very quickly.
-class provides:
-	def __init__(self, member):
-		self.member = member
+
+# Sentinels
+RECOMPUTE = object()
+KEEP = object()
+
+# NOTE: I still think this is a terrible idea, I just don't have any better idea
+#       on how to defer (potentially useless) computations until they're needed
+#       which doesn't drown the code in boilerplate.
+class cached_property:
+	''' A member function decorator which provides a clean way to defer computation.
+
+	A property which is automatically backed by a member, with some slightly unusual
+	 semantics for controlling how it is updated.
+
+	The first time the member is accessed (if it hasn't been assigned a value), it
+	 will call the decorated function, store and return the result.
+	In most cases, assigning a value to the property will simply store that value.
+	But there two special values:
+
+	 * Assigning ``RECOMPUTE`` resets it. (next getter will call the function again)
+	 * Assigning ``KEEP`` is a no-op. (just there for the reader's sake)
+
+	Example:
+
+	>>> class Foo:
+	...   @cached_property()
+	...   def x(self):
+	...     print('computing!!!')
+	...     return 10
+	...
+	>>>
+	>>> foo = Foo()
+	>>> foo.x             # => 10, prints 'computing!!!'
+	>>> foo.x             # => 10
+	>>> foo.x = 3
+	>>> foo.x             # => 3
+	>>> foo.x = KEEP
+	>>> foo.x             # => 3
+	>>> foo.x = RECOMPUTE
+	>>> foo.x             # => 10, prints 'computing!!!'
+	'''
+	def __init__(self, recompute=RECOMPUTE, keep=KEEP):
+		self.member = self.__generate_member_name()
+		self.recompute = recompute
+		self.keep = keep
+
+	def __generate_member_name(self):
+		return '_cached__{}'.format(id(self))
 
 	def __call__(self, func):
 
-		def wrapped(obj, *a, **kw):
-			if getattr(obj, self.member) is None:
-				setattr(obj, self.member, func(obj, *a, **kw))
+		def getmbr(obj):      return getattr(obj, self.member)
+		def setmbr(obj, val): setattr(obj, self.member, val)
 
-			assert getattr(obj, self.member) is not None
-			return getattr(obj, self.member)
+		def getter(obj):
+			if sane_equals(getmbr(obj), self.recompute):
+				setmbr(obj, func(obj))
+			assert not sane_equals(getmbr(obj), self.recompute)
+			assert not sane_equals(getmbr(obj), self.keep)
+			return getmbr(obj)
 
-		return wrapped
+		def setter(obj, value):
+			if not sane_equals(value, self.keep):
+				setmbr(obj, value)
+
+		return property(getter, setter)
 
 
 class MeshCurrentSolver:
@@ -140,74 +193,59 @@ class MeshCurrentSolver:
 	def __init__(self, circuit, cyclebasis, cbupdater):
 		validate_circuit(circuit)
 
-		self._g = circuit
-		self._cbupdater = cbupdater
+		self.g = circuit
+		self.cbupdater = cbupdater
 
-		self._cbupdater.init(cyclebasis)
+		self.cbupdater.init(cyclebasis)
 
 		# Invalidate everything
-		self._cycle_basis      = None
-		self._cycles_from_edge = None
-		self._cycle_currents   = None
+		self.cyclebasis       = RECOMPUTE
+		self.cycles_from_edge = RECOMPUTE
+		self.cycle_currents   = RECOMPUTE
 
 	def delete_node(self, v):
-		self._g.remove_node(v)
-		self._cbupdater.remove_vertex(self._g, v)
+		self.g.remove_node(v)
+		self.cbupdater.remove_vertex(self.g, v)
 
-		# (okay so the point of this stuff below isn't quite so clear when everything
-		#  keeps getting reset all at the same time.  Reminder to self that the intent
-		#  was to be able to allow some actions to selectively invalidate things)
-		#
-		# (or alternatively: reminder to self to tear this useless crap out)
-		self._cycle_basis      = None
-		self._cycles_from_edge = None
-		self._cycle_currents   = None
+		self.cyclebasis       = RECOMPUTE
+		self.cycles_from_edge = RECOMPUTE
+		self.cycle_currents   = RECOMPUTE
 
 	def multiply_nearby_resistances(self, v, factor):
-		for t in self._g.neighbors(v):
-			self._g.edge[v][t][EATTR_RESISTANCE] *= factor
+		for t in self.g.neighbors(v):
+			self.g.edge[v][t][EATTR_RESISTANCE] *= factor
 
-		self._cycle_basis      # still valid!
-		self._cycles_from_edge # still valid!
-		self._cycle_currents   = None
+		self.cyclebasis       = KEEP
+		self.cycles_from_edge = KEEP
+		self.cycle_currents   = RECOMPUTE
 
 	def assign_nearby_resistances(self, v, value):
-		for t in self._g.neighbors(v):
-			self._g.edge[v][t][EATTR_RESISTANCE] = value
+		for t in self.g.neighbors(v):
+			self.g.edge[v][t][EATTR_RESISTANCE] = value
 
-		self._cycle_basis      # still valid!
-		self._cycles_from_edge # still valid!
-		self._cycle_currents   = None
+		self.cyclebasis       = KEEP
+		self.cycles_from_edge = KEEP
+		self.cycle_currents   = RECOMPUTE
 
-	@provides('_cycle_basis')
-	def _acquire_cycle_basis(self):
-		return self._cbupdater.get_cyclebasis()
+	@cached_property()
+	def cyclebasis(self):
+		return self.cbupdater.get_cyclebasis()
 
-	@provides('_cycles_from_edge')
-	def _acquire_cycles_from_edge(self):
-		g = self._g
-		cyclebasis = self._acquire_cycle_basis()
+	@cached_property()
+	def cycles_from_edge(self):
+		return compute_cycles_from_edge(self.g, self.cyclebasis)
 
-		return compute_cycles_from_edge(g, cyclebasis)
+	@cached_property()
+	def cycle_currents(self):
+		V = compute_voltage_vector(self.g, self.cyclebasis)
+		R = compute_resistance_matrix(self.g, self.cyclebasis, self.cycles_from_edge)
 
-	@provides('_cycle_currents')
-	def _acquire_cycle_currents(self):
-		g = self._g
-		cyclebasis = self._acquire_cycle_basis()
-		cycles_from_edge = self._acquire_cycles_from_edge()
-
-		V = compute_voltage_vector(g, cyclebasis)
-		R = compute_resistance_matrix(g, cyclebasis, cycles_from_edge)
-
-		return compute_cycle_currents(R, V, cyclebasis)
+		return compute_cycle_currents(R, V, self.cyclebasis)
 
 	def get_current(self, s, t):
-		g = self._g
-		cycles_from_edge = self._acquire_cycles_from_edge()
-		cycle_currents = self._acquire_cycle_currents()
-
-		ecycles = util.edictget(cycles_from_edge, (s,t))
-		return circuit_edge_sign(g,s,t) * sum(cycle_currents[cycleId] * sign for cycleId, sign in ecycles)
+		ecycles = util.edictget(self.cycles_from_edge, (s,t))
+		esign   = circuit_edge_sign(self.g, s, t)
+		return esign * sum(self.cycle_currents[i] * csign for i, csign in ecycles)
 
 #------------------------------------------------------------
 
