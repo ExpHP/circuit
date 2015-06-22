@@ -206,6 +206,8 @@ class MeshCurrentSolver:
 		# Invalidate everything
 		self.cyclebasis.invalidate()
 		self.cycles_from_edge.invalidate()
+		self.voltage_vector.invalidate()
+		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
 	def delete_node(self, v):
@@ -214,6 +216,8 @@ class MeshCurrentSolver:
 
 		self.cyclebasis.invalidate()
 		self.cycles_from_edge.invalidate()
+		self.voltage_vector.invalidate()
+		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
 	def multiply_nearby_resistances(self, v, factor):
@@ -222,6 +226,8 @@ class MeshCurrentSolver:
 
 		self.cyclebasis       # still valid!
 		self.cycles_from_edge # still valid!
+		self.voltage_vector   # still valid!
+		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
 	def assign_nearby_resistances(self, v, value):
@@ -230,6 +236,8 @@ class MeshCurrentSolver:
 
 		self.cyclebasis       # still valid!
 		self.cycles_from_edge # still valid!
+		self.voltage_vector   # still valid!
+		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
 	@cached_property
@@ -241,11 +249,16 @@ class MeshCurrentSolver:
 		return compute_cycles_from_edge(self.g, self.cyclebasis.get())
 
 	@cached_property
-	def cycle_currents(self):
-		V = compute_voltage_vector(self.g, self.cyclebasis.get())
-		R = compute_resistance_matrix(self.g, self.cyclebasis.get(), self.cycles_from_edge.get())
+	def voltage_vector(self):
+		return compute_voltage_vector(self.g, self.cyclebasis.get())
 
-		return compute_cycle_currents(R, V, self.cyclebasis.get())
+	@cached_property
+	def resistance_matrix(self):
+		return compute_resistance_matrix(self.g, self.cyclebasis.get(), self.cycles_from_edge.get())
+
+	@cached_property
+	def cycle_currents(self):
+		return compute_cycle_currents(self.resistance_matrix.get(), self.voltage_vector.get(), self.cyclebasis.get())
 
 	def get_current(self, s, t):
 		ecycles = util.edictget(self.cycles_from_edge.get(), (s,t))
