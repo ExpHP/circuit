@@ -211,19 +211,10 @@ class MeshCurrentSolver:
 
 #------------------------------------------------------------
 
-# Don't make these member functions;
-# They are laid out below as free functions to explicitly spell out all of the
-#  data dependencies
+# Functions which actually compute stuff for MeshCurrentSolver.
 
-def compute_planar_cycle_basis(g):
-	xs,ys = nx.get_node_attributes(g, VATTR_X), nx.get_node_attributes(g, VATTR_Y)
-	return planar_cycle_basis.planar_cycle_basis_nx(g, xs, ys)
-
-def compute_default_cycle_basis(g):
-	cyclebasis = nx.cycle_basis(g)
-	for cycle in cyclebasis:
-		cycle.append(cycle[0])
-	return cyclebasis
+# These are laid out as free functions so that all data dependencies are clearly
+#  spelled out in the arguments.
 
 def compute_cycles_from_edge(g, cyclebasis):
 	cycles_from_edge = {e:[] for e in g.edges()}
