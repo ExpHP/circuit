@@ -1,4 +1,6 @@
 
+// xorbasis.cpp:  C implementation of xorbasis.
+
 #include <vector>
 #include <algorithm>
 #include <iterator>
@@ -14,6 +16,21 @@
 #include "xorbasis.h"
 
 using namespace std;
+
+// NOTE: Consider tearing out RREF.
+// I'm almost 100% certain that RREF was never necessary in the first place;
+//  everything this class is used for effectively boils down to identifying
+//  linearly dependent subsets.  REF is sufficient for this.
+//
+// I've tried it without the RREF and it didn't seem to perform significantly
+//  better (to the point where one may wonder if RREF may even potentially
+//  improve the performance of the subsequent REF transforms?). So at this
+//  point, I'm just keeping it around for the sake of further benchmarking
+//  and comparison. If it becomes a maintenence burden, tear it out.
+
+// A note on naming:
+//  The `ref_` and `rref_` prefixes denote preconditions.
+//  A method beginning with `ref_` expects an REF matrix as input.
 
 //------------------------------------------------------------------------------
 
@@ -350,7 +367,9 @@ size_t rref_reduce_row_inplace(const RowV & ref_rows, const AugV & ref_augs, Row
 }
 
 // Ensures that the leading one owned by row i is the only 1 in its column,
-//  for an REF matrix.
+//  for an REF matrix. (one of the RREF conditions)
+// (keep in mind the ref_ prefix denotes a precondition.  This method
+//  only plays a role in RREF transforms!)
 void ref_fix_leading_one(RowV & ref_rows, AugV & ref_augs, size_t i)
 {
 	assert(is_ref(ref_rows));
@@ -464,75 +483,12 @@ void ref_cleanup_completely_empty_rows(RowV & rows, AugV & augs)
 	assert(is_ref(rows));
 }
 
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-/**        OLD CODE BELOW         **/
-
-/*
-
-	// Remove rows corresponding to the ids in the provided range
-	template <typename IdentityTRange>
-	void remove_ids(const IdentityTRange & r) {
-		// Complexity: I think  r.size() * rows.size().  (there's room for improvement, no doubt!)
-
-		std::vector<identity_t> rvec = { r.cbegin(), r.cend() };
-
-		auto should_remove = [&](const Row & row) {
-			return std::find(rvec.begin(), rvec.end(), row.primary_id) != rvec.end();
-		};
-
-		auto newend = std::remove_if(this->rows.begin(), this->rows.end(), should_remove);
-		this->shorten(newend - rows.begin());
-
-		this->nnz_rows = this->_compute_nnz_rows();
-	}
-
-	void remove_empty_rows() {
-		this->shorten(this->nnz_rows);
-	}
-
-	column_t compute_max_column() const {
-		if (this->nnz_rows == 0u)
-			throw std::runtime_error("no nonzero rows; max column is degenerate");
-
-		std::vector<column_t> maxes;
-		auto it = this->nonzero_cbegin();
-		while (it != this->nonzero_cend())
-			maxes.push_back((it++)->max_col());
-
-		auto max_it = std::max_element(maxes.cbegin(), maxes.cend());
-		assert(max_it != maxes.cend());
-		return *max_it;
-	}
-
-	std::string dense_string() const {
-		column_t width;
-		if (this->nnz_rows == 0u)
-			width = 0u;
-		else
-			width = this->compute_max_column();
-
-		std::vector<std::string> item_strs;
-		for (auto r : this->rows)
-			item_strs.push_back(r.bits.dense_string(width));
-
-		return join_range(item_strs, "[", "\n ", "]");
-	}
-
-*/
-
-//------------------------------------------------------------------------------
-
-// FIXME shouldn't this be using rref_insert?
 // TODO  do I even need this method to begin with?
 identity_t _XorBasisBuilder::add(Row row)
 {
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
-	rref_insert_bunch(rows, augs, { std::move(row) }, { std::move(aug) });
+	rref_insert(rows, augs, std::move(row), std::move(aug));
 	return id;
 }
 
@@ -580,6 +536,8 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row ro
 		rows.insert(rows.begin() + index, std::move(row));
 		augs.insert(augs.begin() + index, std::move(aug));
 
+		// NOTE: This operation is specific to RREF (if we were to modify the code to only
+		//  perform REF transforms, we could leave this out)
 		ref_fix_leading_one(rows, augs, index);
 
 		assert(is_rref(rows));
