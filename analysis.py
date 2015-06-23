@@ -38,8 +38,10 @@ def trim_trial_by_current(trial_info, threshold=0.0):
 	arr = [-x for x in current]
 	val = -threshold
 
-	assert arr == sorted(arr)
 	zero_idx = bisect.bisect_left(arr, val)
+
+	assert all(abs(x) > threshold*(1 - 1e-14) for x in arr[:zero_idx])
+	assert all(abs(x) <= threshold*(1 + 1e-14) for x in arr[zero_idx:])
 
 	result = copy.deepcopy(trial_info)
 	result['steps'] = slice_steps(result['steps'], start=0, stop=zero_idx)
