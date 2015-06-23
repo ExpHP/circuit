@@ -192,9 +192,33 @@ class bound_cached_property:
 	def invalidate(self): self.prop.invalidate(self.obj)
 
 #------------------------------------------------------------
-
+# Needless to say, computing the currents of a circuit could very easily be provided via a
+#  standalone function. (In earlier versions, it WAS). However, some of the intermediate
+#  data structures are very time consuming to obtain (such as a good-quality cycle basis).
+#
+# MeshCurrentSolver exists in order to keep them around, allowing new results to be derived
+#  from old results when a modification is made to the graph.
+#
+# Its only responsibility is knowing what happens to each data structure for a given
+#  modification to the graph.
+#
+#   * Things which can be updated in place: Call the appropriate method.
+#
+#   * Things which are still valid: Leave them alone.
+#
+#   * Things which must be recomputed from scratch:  Defer their computation until is
+#     known they will be needed (via use of cached_property)
+#
+# The class itself contains NO logic for computation.
+#
 class MeshCurrentSolver:
+	'''
+	Computes currents in a circuit via mesh current analysis.
 
+	Computes the currents in a circuit, and provides efficient
+	methods for computing new currents in response to various
+	modifications to the graph.
+	'''
 	def __init__(self, circuit, cyclebasis, cbupdater):
 		validate_circuit(circuit)
 
@@ -211,6 +235,7 @@ class MeshCurrentSolver:
 		self.cycle_currents.invalidate()
 
 	def delete_node(self, v):
+		# update in-place
 		self.g.remove_node(v)
 		self.cbupdater.remove_vertex(self.g, v)
 
