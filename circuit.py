@@ -236,6 +236,9 @@ class MeshCurrentSolver:
 		self.cycle_currents.invalidate()
 
 	def delete_node(self, v):
+		'''
+		Removes a vertex and all associated edges from the circuit.
+		'''
 		# update in-place
 		self.g.remove_node(v)
 		self.cbupdater.remove_vertex(self.g, v)
@@ -247,6 +250,9 @@ class MeshCurrentSolver:
 		self.cycle_currents.invalidate()
 
 	def multiply_nearby_resistances(self, v, factor):
+		'''
+		Multiplies the resistance of edges connected to a vertex by a scalar factor.
+		'''
 		for t in self.g.neighbors(v):
 			self.g.edge[v][t][EATTR_RESISTANCE] *= factor
 
@@ -257,6 +263,9 @@ class MeshCurrentSolver:
 		self.cycle_currents.invalidate()
 
 	def assign_nearby_resistances(self, v, value):
+		'''
+		Assigns a value to the resistance of all edges connected to a vertex.
+		'''
 		for t in self.g.neighbors(v):
 			self.g.edge[v][t][EATTR_RESISTANCE] = value
 
