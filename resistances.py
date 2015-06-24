@@ -13,15 +13,15 @@ import numpy as np
 import json
 
 from multiprocessing import Pool
-import multiprocessing_dill
+from util import multiprocessing_dill
 
 from circuit import MeshCurrentSolver, CircuitBuilder
 import graph.cyclebasis.planar
 from resistances_common import *
 
-import node_selection
-import node_deletion
-import cyclebasis_provider
+from components import node_selection
+from components import node_deletion
+from components import cyclebasis_provider
 
 import graph.path as vpath
 

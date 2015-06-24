@@ -346,7 +346,7 @@ def _copy_graph_without_attributes(g):
 	return result
 
 def test_two_separate_loops():
-	import cyclebasis_provider
+	from components import cyclebasis_provider
 	# A circuit with two connected components.
 	g = nx.Graph()
 	g.add_path('abca')
@@ -367,7 +367,7 @@ def test_two_separate_loops():
 		assertNear(solver.get_current(s,t), +2.5)
 
 def test_two_loop_circuit():
-	import cyclebasis_provider
+	from components import cyclebasis_provider
 	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
 	g = nx.Graph()
 	g.add_path(['Up','Rt','Dn','Lt','Up'])
