@@ -278,7 +278,22 @@ class MeshCurrentSolver:
 	# FIXME the cached properties really aren't meant to be part of the public api
 	@cached_property
 	def cyclebasis(self):
-		return self.cbupdater.get_cyclebasis()
+		cb = self.cbupdater.get_cyclebasis()
+
+		# NOTE: this test is here because it is one of the only few paths that code
+		#  reliably passes through where the current state of the modified cyclebasis
+		#  and graph are both available.
+
+		# FIXME: whatever happened to validate_cyclebasis?
+		if len(cb) != len(nx.cycle_basis(self.g)):
+
+			# FIXME: This is an error (rather than assertion) due to an unresolved issue
+			#  with the builder updater algorithm;  I CANNOT say with confidence that
+			#  this will not occur. -_-
+			raise RuntimeError('Cyclebasis has incorrect rank ({}, need {}).'.format(
+				len(cb),len(nx.cycle_basis(self.g))))
+
+		return cb
 
 	@cached_property
 	def cycles_from_edge(self):
