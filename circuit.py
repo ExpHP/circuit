@@ -15,6 +15,7 @@ __all__ = [
 	'CircuitBuilder',
 	'MeshCurrentSolver',
 	'validate_circuit',
+	'compute_circuit_currents',
 ]
 
 # produce a sign factor (+/- 1) based on which side we're traveling an
@@ -265,6 +266,7 @@ class MeshCurrentSolver:
 		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
+	# FIXME the cached properties really aren't meant to be part of the public api
 	@cached_property
 	def cyclebasis(self):
 		return self.cbupdater.get_cyclebasis()
@@ -285,10 +287,29 @@ class MeshCurrentSolver:
 	def cycle_currents(self):
 		return compute_cycle_currents(self.resistance_matrix.get(), self.voltage_vector.get(), self.cyclebasis.get())
 
+	def get_all_currents(self):
+		'''
+		Compute all currents in the circuit.
+
+		The return value is a dict ``d`` such that ``d[s,t]`` (for an existing edge ``(s,t)``)
+		is the (signed) current that flows from ``s`` to ``t``. It is guaranteed that
+		``d[s,t] == -(d[t,s])``.
+		'''
+		# NOTE: of course, the guarantee that d[s,t] == -d[t,s] is written under the assumption
+		#       that d[s,t] is not NaN
+		d = compute_all_edge_currents(self.g, self.cycle_currents.get(), self.cycles_from_edge.get())
+		assert all(d[t,s] == -d[s,t] for s,t in d)
+		return d
+
 	def get_current(self, s, t):
-		ecycles = util.edictget(self.cycles_from_edge.get(), (s,t))
-		esign   = circuit_edge_sign(self.g, s, t)
-		return esign * sum(self.cycle_currents.get()[i] * csign for i, csign in ecycles)
+		'''
+		Compute signed current current flowing from ``s`` to ``t``.
+
+		It is a ``KeyError`` if no such edge exists in the graph.
+		'''
+		if not self.g.has_edge(s,t):
+			raise KeyError('no such edge: {}'.format(repr((s,t))))
+		return compute_single_edge_current(self.g, self.cycle_currents.get(), self.cycles_from_edge.get(), s, t)
 
 #------------------------------------------------------------
 
@@ -336,6 +357,44 @@ def compute_cycle_currents(r_mat, v_vec, cyclebasis):
 	solver = spla.factorized(r_mat.tocsc())
 	return solver(v_vec).reshape([len(cyclebasis)])
 
+def compute_single_edge_current(g, cycle_currents, cycles_from_edge, s, t):
+	ecycles = util.edictget(cycles_from_edge, (s,t))
+	esign   = circuit_edge_sign(g, s, t)
+	return esign * sum(cycle_currents[i] * csign for i, csign in ecycles)
+
+def compute_all_edge_currents(g, cycle_currents, cycles_from_edge):
+	result = {}
+	for s,t in g.edges():
+		result[s,t] = compute_single_edge_current(g, cycle_currents, cycles_from_edge, s, t)
+
+	result.update({(t,s):-value for (s,t),value in result.items()})
+	return result
+
+#------------------------------------------------------------
+
+# more ergonomic than MeshCurrentSolver when there's no need to update the graph
+def compute_circuit_currents(circuit, cyclebasis=None):
+	'''
+	Computes an edge attribute dictionary of edge -> current for a circuit.
+
+	The return value is a dict ``d`` such that ``d[s,t]`` (for an existing edge ``(s,t)``)
+	is the (signed) current that flows from ``s`` to ``t``. It is guaranteed that
+	``d[s,t] == -(d[t,s])``.
+
+	If no cyclebasis is provided, one will be automatically generated.  For large graphs,
+	however, the computation time can be significantly reduced by providing a custom
+	cyclebasis with a small total edge count.
+	'''
+	from components import cyclebasis_provider
+	if cyclebasis is None:
+		cyclebasis = cyclebasis_provider.last_resort().new_cyclebasis(circuit)
+
+	solver = MeshCurrentSolver(circuit, cyclebasis, cyclebasis_provider.dummy_cbupdater())
+
+	d = solver.get_all_currents()
+	assert all(d[t,s] == -d[s,t] for s,t in d)
+	return d
+
 #------------------------------------------------------------
 
 def _copy_graph_without_attributes(g):
@@ -346,7 +405,6 @@ def _copy_graph_without_attributes(g):
 	return result
 
 def test_two_separate_loops():
-	from components import cyclebasis_provider
 	# A circuit with two connected components.
 	g = nx.Graph()
 	g.add_path('abca')
@@ -360,14 +418,13 @@ def test_two_separate_loops():
 	builder.make_resistor('z', 'x', 1.0)
 
 	circuit = builder.build()
-	cbprovider = cyclebasis_provider.last_resort()
-	solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(g), cbprovider.cbupdater())
+	currents = compute_circuit_currents(circuit)
 
 	for s,t in ('ab', 'bc', 'ca', 'xy', 'yz', 'zx'):
-		assertNear(solver.get_current(s,t), +2.5)
+		assertNear(currents[s,t], +2.5)
+		assertNear(currents[t,s], -2.5)
 
 def test_two_loop_circuit():
-	from components import cyclebasis_provider
 	# {0: 5.0, 1: -0.99999999999999956, 2: 4.0, 3: -5.0, 4: 0.99999999999999956}
 	g = nx.Graph()
 	g.add_path(['Up','Rt','Dn','Lt','Up'])
@@ -380,14 +437,34 @@ def test_two_loop_circuit():
 	builder.make_resistor('Up', 'Rt', 1.0)
 
 	circuit = builder.build()
-	cbprovider = cyclebasis_provider.last_resort()
-	solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(g), cbprovider.cbupdater())
+	currents = compute_circuit_currents(circuit)
 
-	assertNear(solver.get_current('Dn','Lt'), +5.0)
-	assertNear(solver.get_current('Dn','Rt'), -1.0)
-	assertNear(solver.get_current('Up','Dn'), +4.0)
-	assertNear(solver.get_current('Up','Lt'), -5.0)
-	assertNear(solver.get_current('Up','Rt'), +1.0)
+	assertNear(currents['Dn','Lt'], +5.0)
+	assertNear(currents['Dn','Rt'], -1.0)
+	assertNear(currents['Up','Dn'], +4.0)
+	assertNear(currents['Up','Lt'], -5.0)
+	assertNear(currents['Up','Rt'], +1.0)
+
+def test_get_current_consistency():
+	import random
+	from components import cyclebasis_provider
+	g = nx.gnm_random_graph(5,16)
+	builder = CircuitBuilder(g)
+	for s,t in g.edges():
+		builder.make_component(s, t, resistance=random.random(), voltage=random.random())
+	circuit = builder.build()
+
+	# freestanding function results
+	currents = compute_circuit_currents(circuit)
+
+	# class results
+	cbprovider = cyclebasis_provider.last_resort()
+	solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(circuit), cbprovider.cbupdater())
+
+	# consistent?
+	for s,t in g.edges():
+		assertNear(solver.get_current(s,t), currents[s,t])
+		assertNear(solver.get_current(t,s), currents[t,s])
 
 def assertNear(a,b,eps=1e-7):
 	assert abs(a-b) < eps
@@ -398,4 +475,5 @@ def iterN(n, f, *a, **kw):
 
 test_two_separate_loops()
 test_two_loop_circuit()
+test_get_current_consistency()
 
