@@ -145,7 +145,7 @@ def run_parallel(f,*,threads,times):
 		return f()
 
 	p = Pool(threads)
-	return multiprocessing_dill.map(p, run_with_seed, seeds)
+	return multiprocessing_dill.map(p, run_with_seed, seeds, chunksize=1)
 
 def wrap_with_profiling(pstatsfile, f):
 	def wrapped(*args, **kwargs):
