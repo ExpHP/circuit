@@ -1,7 +1,7 @@
 set -e
 
 clang++ -O2 --std=c++11 graph/cyclebasis/test_xorbasis.cpp -o graph/cyclebasis/test_xorbasis
-#graph/cyclebasis/test_xorbasis
+graph/cyclebasis/test_xorbasis
 
 ./build-xorbasis.sh
 
