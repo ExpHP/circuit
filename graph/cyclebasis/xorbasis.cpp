@@ -149,10 +149,6 @@ std::pair<RowV, AugV> transform_to_ref(const RowV & rows, const AugV & augs)
 	auto f_comp = make_function(ref_order_greater<RowAug>);
 	auto heap = make_priority_queue<RowAug>(rowaugs.cbegin(), rowaugs.cend(), f_comp);
 
-	// TODO: possible optimization point: try using heap functions directly instead of
-	//  through priority_queue.  This would allow moving objects out of the top of the
-	//  heap, as well as enabling us to perform a combination pop-push.
-
 	// deal with nonzero rows
 	if (!is_zero(heap.top())) {
 
