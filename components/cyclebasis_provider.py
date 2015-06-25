@@ -60,6 +60,22 @@ class last_resort:
 	def info(self):
 		return {'mode': 'networkx builtin'}
 
+# Wraps a previously-computed cyclebasis in a cyclebasis_provider.
+# (FIXME: this is here as a quick hack so that other scripts (e.g. tests) can invoke run_trial_nx
+#  with their own cyclebasis; it would be nicer if running a trial didn't require a cbprovider)
+class from_existing:
+	def __init__(self, cyclebasis):
+		self.cycles = cyclebasis
+
+	def cbupdater(self):
+		return builder_cbupdater()
+
+	def new_cyclebasis(self, g):
+		return self.cycles
+
+	def info(self):
+		return {'mode': 'already computed'}
+
 
 #-----------------------------------------------------------
 
