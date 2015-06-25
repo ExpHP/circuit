@@ -17,8 +17,9 @@ def trial_current(trial_info):
 def trial_resistance(trial_info):
 	return map(lambda x: 1./x, trial_current(trial_info))
 
-def slice_steps(step_info, start, stop=None, step=1):
-	return {k:v[start:stop:step] for k,v in step_info.items()}
+def slice_steps(step_info, *args):
+	sl = slice(*args)
+	return {k:v[sl] for k,v in step_info.items()}
 
 # ignores shorter trials once they are zero
 def trialset_average_current(trial_infos):
