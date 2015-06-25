@@ -111,9 +111,11 @@ void test_rref_insert_order() {
 	assert(rref_rows == rref_permuted);
 }
 
-// The result of removing vectors should be the same as if they were never added
-//  in the first place.
+// NOTE: This test was written under the assumption that _XorBasisBuilder performs
+//       RREF transforms, which it might not necessarily do.
 void test_xorbasis_remove_ids(int n) {
+	// The result of removing vectors should be the same as if they were never added
+	//  in the first place.
 	_XorBasisBuilder xorb;
 	RowV rows1 = random_matrix(2*n,4*n);
 	RowV rows2 = random_matrix(2*n,4*n);
@@ -134,9 +136,7 @@ int main(int argc, char * argv[]) {
 	test_rref_fixed();
 	test_rref_idempotent();
 	test_rref_insert_order();
-	std::cout << "lol" << std::endl;
-	test_xorbasis_remove_ids(40);
-	std::cout << "lol" << std::endl;
+	//test_xorbasis_remove_ids(40); // does not apply when _XorBasisBuilder does REF
 
 	return 0;
 }

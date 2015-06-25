@@ -20,13 +20,12 @@ using namespace std;
 // NOTE: Consider tearing out RREF.
 // I'm almost 100% certain that RREF was never necessary in the first place;
 //  everything this class is used for effectively boils down to identifying
-//  linearly dependent subsets.  REF is sufficient for this.
+//  linearly dependent subsets.  REF is sufficient for this, and as such,
+//  XorBasisBuilder only performs REF transformations now.
 //
-// I've tried it without the RREF and it didn't seem to perform significantly
-//  better (to the point where one may wonder if RREF may even potentially
-//  improve the performance of the subsequent REF transforms?). So at this
-//  point, I'm just keeping it around for the sake of further benchmarking
-//  and comparison. If it becomes a maintenence burden, tear it out.
+// This means the RREF code is currently UNUSED and NOT WELL TESTED, and is
+//  likely to start "rotting" for as long as both of these conditions remain
+//  true in the face of continued maintenence.
 
 // A note on naming:
 //  The `ref_` and `rref_` prefixes denote preconditions.
@@ -414,18 +413,26 @@ size_t rref_insert(RowV & rref_rows, AugV & rref_augs, Row row, Aug aug) {
 	return i;
 }
 
-// Insert a bunch of rows, maintaining RREF
-void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV new_augs) {
-	assert(is_rref(rref_rows));
+// Insert a bunch of rows, maintaining REF
+void ref_insert_bunch(RowV & ref_rows, AugV & ref_augs, RowV new_rows, AugV new_augs) {
+	assert(is_ref(ref_rows));
 
-	//  Insert rows one at a time maintaining REF.
+	//  No fancy algo (at least yet); just insert one by one.
 	//  Note that it is NOT possible to simpy reduce each row against the matrix and
 	//    then insert them all at once;  while it would remove all conflicts against
 	//    existing rows in the matrix, it would not prevent the new rows from conflicting
 	//    __with eachother__.
 	for (size_t i=0; i<new_rows.size(); i++)
-		ref_insert(rref_rows, rref_augs, std::move(new_rows[i]), std::move(new_augs[i]));
+		ref_insert(ref_rows, ref_augs, std::move(new_rows[i]), std::move(new_augs[i]));
 
+	assert(is_ref(ref_rows));
+}
+
+// Insert a bunch of rows, maintaining RREF
+void rref_insert_bunch(RowV & rref_rows, AugV & rref_augs, RowV new_rows, AugV new_augs) {
+	assert(is_rref(rref_rows));
+
+	ref_insert_bunch(rref_rows, rref_augs, std::move(new_rows), std::move(new_augs));
 	ref_transform_to_rref_inplace(rref_rows, rref_augs);
 
 	assert(is_rref(rref_rows));
@@ -488,7 +495,7 @@ identity_t _XorBasisBuilder::add(Row row)
 {
 	auto id = assign_identity(row);
 	Aug aug = original_aug(id);
-	rref_insert(rows, augs, std::move(row), std::move(aug));
+	ref_insert(rows, augs, std::move(row), std::move(aug));
 	return id;
 }
 
@@ -503,7 +510,7 @@ std::vector<identity_t> _XorBasisBuilder::add_many(RowV added_rows)
 		ids.push_back(id);
 	}
 
-	rref_insert_bunch(rows, augs, std::move(added_rows), std::move(added_augs));
+	ref_insert_bunch(rows, augs, std::move(added_rows), std::move(added_augs));
 	return std::move(ids);
 }
 
@@ -528,7 +535,7 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row ro
 	Aug aug = original_aug(id);
 
 	// Any row which forms a linear combo with rows in the matrix will reduce to all zeros.
-	size_t index = rref_reduce_row_inplace(rows, augs, row, aug);
+	size_t index = ref_reduce_row_inplace(rows, augs, row, aug);
 
 	if (is_zero(row)) {
 		return { false, 0 };
@@ -536,11 +543,10 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row ro
 		rows.insert(rows.begin() + index, std::move(row));
 		augs.insert(augs.begin() + index, std::move(aug));
 
-		// NOTE: This operation is specific to RREF (if we were to modify the code to only
-		//  perform REF transforms, we could leave this out)
-		ref_fix_leading_one(rows, augs, index);
+		// NOTE: if we were trying to maintain RREF instead of REF, we'd also have to
+		//       fix conflicts with the new leading one at this point
 
-		assert(is_rref(rows));
+		assert(is_ref(rows));
 		return { true, id };
 	}
 	assert(false);
@@ -561,7 +567,7 @@ void _XorBasisBuilder::remove_ids(Aug ids)
 	}
 
 	// ouch
-	std::tie(rows,augs) = transform_to_rref(std::move(rows), std::move(augs));
+	std::tie(rows,augs) = transform_to_ref(std::move(rows), std::move(augs));
 
 	// There should be precisely this many rows that are *completely*
 	//  empty (both row and aug).  Clean them out.
