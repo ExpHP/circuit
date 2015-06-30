@@ -188,19 +188,26 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substep
 	for step in range(steps):
 		t = time.time()
 
-		# the big heavy calculation!
-		current = solver.get_current(*measured_edge)
-
 		# introduce defects
 		deleted = []
-		for _ in range(substeps):
-			vdeleted = selection_func(choices, initial_g, past_selections)
-			deletion_func(solver, vdeleted)
+		if step > 0:  # first step is initial state
 
-			past_selections.append(vdeleted)
-			choices.remove(vdeleted)
+			step_substeps = min(substeps, len(choices))
+			if step_substeps == 0:
+				break  # graph can't change from previous step;  end trial
 
-			deleted.append(vdeleted)
+			for _ in range(step_substeps):
+
+				vdeleted = selection_func(choices, initial_g, past_selections)
+				deletion_func(solver, vdeleted)
+
+				past_selections.append(vdeleted)
+				choices.remove(vdeleted)
+
+				deleted.append(vdeleted)
+
+		# the big heavy calculation!
+		current = solver.get_current(*measured_edge)
 
 		runtime = time.time() - t
 
