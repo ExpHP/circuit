@@ -378,6 +378,10 @@ def compute_resistance_matrix(g, cyclebasis, cycles_from_edge):
 	return sparse.coo_matrix((R_vals, (R_rows, R_cols)), shape=(len(cyclebasis),)*2)
 
 def compute_cycle_currents(r_mat, v_vec, cyclebasis):
+	# special case for no cycles (which otherwise makes a singular matrix)
+	if len(cyclebasis) == 0:
+		return np.array([], dtype=v_vec.dtype)
+
 	solver = spla.factorized(r_mat.tocsc())
 	return solver(v_vec).reshape([len(cyclebasis)])
 
