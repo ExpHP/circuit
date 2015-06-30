@@ -12,7 +12,7 @@ from resistances_common import *
 
 import graph.path as vpath
 from buildcb import build_cyclebasis_terminal
-from util import assertRaises
+from util import assertRaises, zip_matching_length
 
 def main(argv):
 	parser = argparse.ArgumentParser()
@@ -409,13 +409,6 @@ def cycles_upto_impl(g, n, path):
 def unzip_dict(d):
 	zipped = zip_matching_length(*d.values())
 	return [{k:v for k,v in zip(d.keys(), x)} for x in zipped]
-
-def zip_matching_length(*arrs):
-	sentinel = object()
-	zipped = list(map(list, itertools.zip_longest(*arrs, fillvalue=sentinel)))
-	if sentinel in zipped[-1]:
-		raise ValueError('zip_matching_length called on iterables of mismatched length')
-	return zipped
 
 _d1,_d2 = unzip_dict({'a':(1,2),'b':(3,4)})
 assert _d1 == {'a': 1, 'b': 3}
