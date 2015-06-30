@@ -16,7 +16,7 @@ __all__ = [
 # Uses planar embedding info from graph
 class planar:
 	def cbupdater(self):
-		return planar_cbupdater()
+		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
 		xs = {v:g.node[v]['x'] for v in g}

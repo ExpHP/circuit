@@ -288,6 +288,13 @@ def test_hanging_diamond():
 #  removal of the given vertex
 def without_vertex(cyclebasis, v):
 
+	# FIXME FIXME FIXME
+	# So it turns out there are some rare cases in which this still fails to produce a
+	# cyclebasis of correct length. The builder method is more general and not terribly
+	# slower; use that instead.
+	raise RuntimeError("This method has unresolved issues that compromise its results. "
+		"Please do not use it.")
+
 	invalidated, unchanged = partition(lambda c: v in c, cyclebasis)
 
 	segments = [break_cycle_at(c, v) for c in invalidated]
