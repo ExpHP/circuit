@@ -173,6 +173,10 @@ def hex_bridge_grid_circuit(gridvs):
 
 	return g
 
+# FIXME HACK
+# Should use CircuitBuilder and save_circuit instead
+from circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
+
 def add_wire(g, s, t):
 	g.add_edge(s, t)
 	g.edge[s][t][EATTR_RESISTANCE] = 0.0

@@ -196,6 +196,10 @@ def add_connector_edges(g, cellrows, cellcols):
 			for v in hex_vertices(nrows-1, col):
 				add_wire(g, top, v)
 
+# FIXME HACK
+# Should use CircuitBuilder and save_circuit instead
+from circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
+
 def add_wire(g, s, t):
 	g.add_edge(s, t)
 	g.edge[s][t][EATTR_RESISTANCE] = 0.0
