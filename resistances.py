@@ -16,7 +16,7 @@ import json
 from multiprocessing import Pool
 from util import multiprocessing_dill, TempfileWrapper
 
-from circuit import MeshCurrentSolver, CircuitBuilder, circuit_load
+from circuit import MeshCurrentSolver, CircuitBuilder, load_circuit
 import graph.cyclebasis.planar
 from resistances_common import *
 
@@ -246,7 +246,7 @@ def visualize_selection_func(g, selection_func, nsteps):
 
 def read_graph(path):
 	# FIXME this should do more to acquire the defect trial settings
-	g = circuit_load(path)
+	g = load_circuit(path)
 	return g
 
 def get_deletable_nodes(g):

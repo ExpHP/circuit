@@ -12,8 +12,10 @@ import util
 __all__ = [
 	'CircuitBuilder',
 	'MeshCurrentSolver',
-	'validate_circuit',
 	'compute_circuit_currents',
+	'validate_circuit',
+	'save_circuit',
+	'load_circuit',
 ]
 
 # attribute names used internally by circuits
@@ -108,6 +110,20 @@ def validate_circuit(circuit):
 
 	return True
 
+def save_circuit(circuit, path):
+	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
+	nx.write_gml(g, path)
+
+def load_circuit(path):
+	# FIXME remove this later
+	if path.endswith('.gpickle'): # old format
+		return nx.read_gpickle(path)
+	else:
+		# NOTE: we deliberately do not relabel the nodes as other files may specify nodes by name.
+		g = nx.read_gml(path)
+		circuit = map_edge_attributes(g, SAVED_TO_INTERNAL_EATTR)
+		return circuit
+
 def circuit_edge_sign(circuit, s, t):
 	positive_source = circuit.edge[s][t][EATTR_SOURCE]
 	assert positive_source in (s,t)
@@ -118,20 +134,6 @@ def circuit_path_voltage(circuit, path):
 	for s,t in vpath.edges(path):
 		acc += circuit_edge_sign(circuit,s,t) * circuit.edge[s][t][EATTR_VOLTAGE]
 	return acc
-
-def circuit_save(circuit, path):
-	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
-	nx.write_gml(g, path)
-
-def circuit_load(path):
-	# FIXME remove this later
-	if path.endswith('.gpickle'): # old format
-		return nx.read_gpickle(path)
-	else:
-		# NOTE: we deliberately do not relabel the nodes as other files may specify nodes by name.
-		g = nx.read_gml(path)
-		circuit = map_edge_attributes(g, SAVED_TO_INTERNAL_EATTR)
-		return circuit
 
 def map_edge_attributes(g, d):
 	copy = copy_without_attributes(g)
