@@ -12,6 +12,7 @@ except ImportError:
 import networkx as nx
 import numpy as np
 import json
+import toml
 
 from multiprocessing import Pool
 from util import multiprocessing_dill, TempfileWrapper
@@ -80,7 +81,8 @@ def main():
 	else:
 		cbprovider = cyclebasis_provider.planar()
 
-	g = read_graph(args.input)
+	# FIXME  name/return value discrepancy
+	g, config = read_graph(args.input)
 
 	# The function that worker threads will invoke
 	cmd_once = functools.partial(run_trial_nx,
@@ -90,6 +92,8 @@ def main():
 		cbprovider = cbprovider,
 		selection_func = selector.selection_func,
 		deletion_func  = deletor.deletion_func,
+		measured_edge = config.get_measured_edge(),
+		no_defect = config.get_no_defect(),
 		verbose = args.verbose,
 	)
 	# Pass g via a temp file in case it is extremely large.
@@ -169,7 +173,9 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substeps=1, verbose=False):
+def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
+	no_defect = set(no_defect)
+
 	if verbose:
 		print('Starting')
 
@@ -180,8 +186,8 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substep
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
-	measured_edge = get_measured_edge(g)
-	choices = get_deletable_nodes(g)
+	is_deletable = lambda v: (v not in no_defect) and (v not in measured_edge)
+	choices = [v for v in g if is_deletable(v)]
 	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), cbupdater=cbprovider.cbupdater())
 
 	past_selections = []
@@ -245,17 +251,17 @@ def visualize_selection_func(g, selection_func, nsteps):
 	plt.show()
 
 def read_graph(path):
-	# FIXME this should do more to acquire the defect trial settings
+	# TODO allow manual specification of config path
 	g = load_circuit(path)
-	return g
+	for ext in ('.circuit', '.gpickle'): # HACK
+		if path.endswith(ext):
+			cfgpath = swap_ext(path, ext, '.defect.toml')
+	config = Config.from_file(cfgpath)
+	return g, config
 
-def get_deletable_nodes(g):
-	return set(v for v in g if g.node[v][VATTR_REMOVABLE])
-
-def get_measured_edge(g):
-	measure_s = g.graph[GATTR_MEASURE_SOURCE]
-	measure_t = g.graph[GATTR_MEASURE_TARGET]
-	return (measure_s, measure_t)
+def swap_ext(path, ext1, ext2):
+	assert path.endswith(ext1)
+	return path[:-len(ext1)] + ext2
 
 def graph_info_circuit(circuit):
 	return {
@@ -297,6 +303,46 @@ def write_cyclebasis(cyclebasis, path):
 	s = json.dumps(cyclebasis)
 	with open(path, 'w') as f:
 		f.write(s)
+
+class Config:
+	def __init__(self, measured_edge=None, no_defect=None):
+		self.__edge = None
+		self.__no_defect = None
+		if measured_edge is not None: self.set_measured_edge(*measured_edge)
+		if no_defect is not None: self.set_no_defect(no_defect)
+
+	def set_measured_edge(self, s, t): self.__edge = [s,t]
+	def set_no_defect(self, d):     self.__no_defect = list(d)
+
+	def get_measured_edge(self): return tuple(self.__edge)
+	def get_no_defect(self):  return list(self.__no_defect)
+
+	@classmethod
+	def from_file(cls, path):
+		with open(path) as f:
+			s = f.read()
+		return cls.deserialize(s)
+
+	def save(self, path):
+		s = self.serialize()
+		with open(path, 'w') as f:
+			f.write(s)
+
+	@classmethod
+	def deserialize(cls, s):
+		d = toml.loads(s)
+		measured_edge = tuple(d['general']['measured_edge'])
+		no_defect = list(d['general']['no_defect'])
+		return cls(measured_edge, no_defect)
+
+	def serialize(self):
+		d = {
+			'general': {
+				'measured_edge': self.__edge,
+				'no_defect': self.__no_defect,
+			},
+		}
+		return toml.dumps(d)
 
 if __name__ == '__main__':
 	main()
