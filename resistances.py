@@ -3,6 +3,7 @@ import sys
 import math
 import random
 import time
+import functools
 try:
 	import cProfile as profile
 except ImportError:
@@ -13,9 +14,9 @@ import numpy as np
 import json
 
 from multiprocessing import Pool
-from util import multiprocessing_dill
+from util import multiprocessing_dill, TempfileWrapper
 
-from circuit import MeshCurrentSolver, CircuitBuilder
+from circuit import MeshCurrentSolver, CircuitBuilder, circuit_load
 import graph.cyclebasis.planar
 from resistances_common import *
 
@@ -79,15 +80,21 @@ def main():
 	else:
 		cbprovider = cyclebasis_provider.planar()
 
-	cmd_once = lambda : run_trial_fpath(
+	g = read_graph(args.input)
+
+	# The function that worker threads will invoke
+	cmd_once = functools.partial(run_trial_nx,
+		# g is deliberately missing from this invocation
 		steps = args.steps,
 		substeps = args.substeps,
-		graphpath = args.input,
 		cbprovider = cbprovider,
 		selection_func = selector.selection_func,
 		deletion_func  = deletor.deletion_func,
 		verbose = args.verbose,
 	)
+	# Pass g via a temp file in case it is extremely large.
+	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to this
+	cmd_once = cmd_wrapper.func
 
 	if args.jobs == 1:
 		cmd_all = lambda: run_sequential(cmd_once, times=args.trials)
@@ -161,11 +168,6 @@ def wrap_with_profiling(pstatsfile, f):
 
 		return result
 	return wrapped
-
-# a variant of run_trial_nx which takes a filepath instead of a graph object, making calls
-# to it more easily serialized (and thus making it a better target for multiprocess execution)
-def run_trial_fpath(graphpath, *args, **kwargs):
-	return run_trial_nx(read_graph(graphpath), *args, **kwargs)
 
 def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, *, substeps=1, verbose=False):
 	if verbose:
@@ -243,7 +245,8 @@ def visualize_selection_func(g, selection_func, nsteps):
 	plt.show()
 
 def read_graph(path):
-	g = nx.read_gpickle(path)
+	# FIXME this should do more to acquire the defect trial settings
+	g = circuit_load(path)
 	return g
 
 def get_deletable_nodes(g):
@@ -265,23 +268,6 @@ def graph_info_nx(g):
 		'num_vertices': g.number_of_nodes(),
 		'num_edges':    g.number_of_edges(),
 	}
-
-def circuit_from_nx(g):
-	# FIXME using builder here is convoluted
-	# FIXME in fact if you think about it this function doesn't actually
-	#       accomplish anything now
-	# FIXME also clarify what the EATTR/etc constants are really for
-	builder = CircuitBuilder(g)
-	for (v1,v2) in g.edges():
-			eattr = g.edge[v1][v2]
-			s = eattr[EATTR_SOURCE]
-			t = other_endpoint_nx((v1,v2), s)
-
-			builder.make_component(s, t,
-				resistance = eattr[EATTR_RESISTANCE],
-				voltage = eattr[EATTR_VOLTAGE],
-			)
-	return builder.build()
 
 def other_endpoint_nx(e, s):
 	(v1,v2) = e

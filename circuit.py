@@ -7,8 +7,6 @@ import graph.path as vpath
 import graph.cyclebasis
 import networkx as nx
 
-from resistances_common import *
-
 import util
 
 __all__ = [
@@ -17,6 +15,19 @@ __all__ = [
 	'validate_circuit',
 	'compute_circuit_currents',
 ]
+
+# attribute names used internally by circuits
+EATTR_SOURCE = 'src' # defines sign of voltage; not necessarily same as the graph's internal 'source'
+EATTR_RESISTANCE = 'resistance'
+EATTR_VOLTAGE = 'voltage'
+
+# attribute names when a circuit is saved
+INTERNAL_TO_SAVED_EATTR = {
+	EATTR_SOURCE:     'voltsrc',
+	EATTR_RESISTANCE: 'res',
+	EATTR_VOLTAGE:    'volt',
+}
+SAVED_TO_INTERNAL_EATTR = util.dict_inverse(INTERNAL_TO_SAVED_EATTR)
 
 # produce a sign factor (+/- 1) based on which side we're traveling an
 #  edge from.  This is to allow circuit components to appropriately
@@ -107,6 +118,33 @@ def circuit_path_voltage(circuit, path):
 	for s,t in vpath.edges(path):
 		acc += circuit_edge_sign(circuit,s,t) * circuit.edge[s][t][EATTR_VOLTAGE]
 	return acc
+
+def circuit_save(circuit, path):
+	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
+	nx.write_gml(g, path)
+
+def circuit_load(path):
+	# FIXME remove this later
+	if path.endswith('.gpickle'): # old format
+		return nx.read_gpickle(path)
+	else:
+		# NOTE: we deliberately do not relabel the nodes as other files may specify nodes by name.
+		g = nx.read_gml(path)
+		circuit = map_edge_attributes(g, SAVED_TO_INTERNAL_EATTR)
+		return circuit
+
+def map_edge_attributes(g, d):
+	copy = copy_without_attributes(g)
+	for old,new in d.items():
+		attr = nx.get_edge_attributes(g, old)
+		nx.set_edge_attributes(copy, new, attr)
+	return copy
+
+def copy_without_attributes(g):
+	result = nx.Graph()
+	result.add_nodes_from(g)
+	result.add_edges_from(g.edges())
+	return result
 
 #------------------------------------------------------------
 

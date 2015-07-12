@@ -1,5 +1,7 @@
 
 import itertools
+import tempfile
+import pickle
 
 # A scrolling 2-element window on an iterator
 def window2(it):
@@ -53,3 +55,116 @@ def zip_variadic(*its):
 
 def edictget(d, e):
 	return d[e[::-1] if e[::-1] in d else e]
+
+
+class TempPickle:
+	'''
+	An object pickled to a temporary file.
+
+	This exists to aid the creation of worker threads (via e.g. ``multiprocessing.Pool.map``)
+	that take a large object.  Instead of passing the object directly to workers, create a
+	``TempPickle`` from it and pass the filename (accessible via the ``.path`` attribute)
+	to the workers. Workers should call the static method ``TempPickle.read(path)`` to
+	obtain the object.
+
+	The actual file on disk will be deleted once no references to the TempPickle exist,
+	allowing for proper cleanup regardless of exceptions.  However, this makes TempPickle
+	ill-suited for asynchronous communication between concurrently running processes.
+
+	PORTABILITY CONCERNS:  Works fine on Unix, but may unusable on e.g. Windows due to
+	the fact that TempPickle keeps an open file handle on the object.
+	'''
+	def __init__(self, obj):
+		self.__temp = tempfile.NamedTemporaryFile('wb')
+		pickle.dump(obj, self.__temp, pickle.HIGHEST_PROTOCOL)
+		self.__temp.flush()
+		# do NOT close __temp, as doing so will delete the file early
+
+	@property
+	def path(self):
+		''' File path to the pickled object. '''
+		return self.__temp.name
+
+	@staticmethod
+	def read(path):
+		''' Obtain an object from the path. '''
+		return pickle.load(path)
+
+class TempfileWrapper:
+	'''
+	Wrap a function to take some arguments via temporary files.
+
+	``TempfileWrapper`` exists to aid the creation of worker processes (via
+	e.g. ``multiprocessing.Pool.map`` or ``dill``) that take large objects
+	as input.  Constructing one is similar to calling ``functools.partial``,
+	and the wrapped function is accessible via the ``func`` field:
+
+	>>> add = lambda a,b,c: a + b + c
+	>>> wrapper = TempfileWrapper(add, 10, 20)
+	>>> wrapper.func(12)
+	42
+	>>> wrapper = TempfileWrapper(add, c=3) # keyword arguments ok too
+	>>> wrapper.func(1333, 1)
+	1337
+
+	When created, a ``TempfileWrapper`` pickles each argument to a temporary
+	file.  The wrapped function reads these temporary files to obtain the
+	arguments when called. To assist in cleanup, the temporary files will
+	automatically be closed once no more references to the TempfileWrapper
+	exist. This means you must be mindful not to accidentally "orphan" the
+	wrapped function:
+
+	>>> def bad_idea():
+	...     wrapper = TempfileWrapper(lambda x: x, 3)
+	...     return wrapper.func # last reference to wrapper falls out of scope
+	...
+	>>> func = bad_idea()
+	>>> func()
+	... # doctest: +IGNORE_EXCEPTION_DETAIL
+	Traceback (most recent call last):
+	  ...
+	FileNotFoundError: [Errno 2] No such file or directory: '/tmp/tmp9rxjs5gq'
+
+	PORTABILITY CONCERNS: Works on Linux.  May fail to work on other operating
+	systems due to the fact that ``TempfileWrapper`` keeps open file handles in
+	write mode on each temp file (a limitation of ``tempfile.NamedTemporaryFile``).
+	'''
+	def __init__(self, f, *args, **kw):
+		self.__tempfiles = []
+
+		def make_temp(obj):
+			tmp = tempfile.NamedTemporaryFile('wb')
+			pickle.dump(obj, tmp, pickle.HIGHEST_PROTOCOL)
+			tmp.flush()
+
+			self.__tempfiles.append(tmp)
+
+			return tmp.name
+
+		argpaths = [make_temp(x) for x in args]
+		kwpaths  = {k:make_temp(v) for k,v in kw.items()}
+
+		# (note how wrapped does NOT reference `self`.  We don't want this closure to
+		#  close over the temp files, so keep it this way. :P)
+		def wrapped(*moreargs, **morekw):
+			def read_temp(path):
+				with open(path, 'rb') as f:
+					return pickle.load(f)
+
+			allargs = [read_temp(x) for x in argpaths]
+			allkw   = {k:read_temp(v) for k,v in kwpaths.items()}
+
+			allargs += moreargs
+			allkw.update(morekw)
+			return f(*allargs, **allkw)
+
+		self.func = wrapped
+
+def dict_inverse(d):
+	if len(set(d.values())) != len(d): raise ValueError('dictionary is not one-to-one!')
+	return {v:k for k,v in d.items()}
+
+if __name__ == '__main__':
+	import doctest
+	doctest.testmod()
+
