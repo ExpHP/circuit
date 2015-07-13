@@ -3,6 +3,7 @@ import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as spla
 
+from components import cyclebasis_provider
 import filetypes.internal.graph as graphio
 import graph.path as vpath
 import graph.cyclebasis
@@ -260,7 +261,10 @@ class MeshCurrentSolver:
 	methods for computing new currents in response to various
 	modifications to the graph.
 	'''
-	def __init__(self, circuit, cyclebasis, cbupdater):
+	def __init__(self, circuit, cyclebasis, cbupdater=None):
+		if cbupdater is None:
+			cbupdater = cyclebasis_provider.dummy_cbupdater()
+
 		validate_circuit(circuit)
 
 		self.g = circuit
@@ -453,7 +457,6 @@ def compute_circuit_currents(circuit, cyclebasis=None):
 	however, the computation time can be significantly reduced by providing a custom
 	cyclebasis with a small total edge count.
 	'''
-	from components import cyclebasis_provider
 	if cyclebasis is None:
 		cyclebasis = cyclebasis_provider.last_resort().new_cyclebasis(circuit)
 
