@@ -6,7 +6,9 @@ import argparse
 import numpy as np
 import networkx as nx
 
-from resistances_common import *
+import resistances
+from circuit import save_circuit
+from util import zip_dict
 
 # (these top two should be flipped x/y)
 # Column numbers: (zigzag dimension)
@@ -49,7 +51,7 @@ def main(argv):
 	args = parser.parse_args(argv[1:])
 
 	values = make_circuit(args.rows, args.cols)
-	save_circuit(args.output, *values)
+	save_output(args.output, *values)
 
 
 def make_circuit(cellrows, cellcols):
@@ -105,23 +107,27 @@ def make_circuit(cellrows, cellcols):
 
 	return g, xs, ys, deletable, measure_edge
 
-def save_circuit(path, g, xs, ys, deletable, measure_edge):
+def save_output(path, g, xs, ys, deletable, measure_edge):
+
+	#TODO may no longer be worthwhile now that we call out to functions which
+	#  ought to do validation for us (however I don't think it actually does currently!)
+	assert validate_graph_attributes(g)
+
+	save_circuit(g, path)
+
+	basename = drop_extension(path)
+
 	# remove e.g. numpy type information from floats
 	xs = {v:float(x) for v,x in xs.items()}
 	ys = {v:float(x) for v,x in ys.items()}
 
-	nx.set_node_attributes(g, VATTR_X, xs)
-	nx.set_node_attributes(g, VATTR_Y, ys)
-	nx.set_node_attributes(g, VATTR_REMOVABLE, deletable)
+	pos = zip_dict(xs, ys)
+	save_gpos(pos, basename + '.planar.gpos')
 
-	# set edge that will have its current measured
-	s,t = measure_edge
-	g.graph[GATTR_MEASURE_SOURCE] = s
-	g.graph[GATTR_MEASURE_TARGET] = t
-
-	assert validate_graph_attributes(g)
-
-	nx.write_gpickle(g, path)
+	config = resistances.Config()
+	config.set_measured_edge(*measure_edge)
+	config.set_no_defect([])
+	config.save(basename + '.defect.toml')
 
 # Total number of rows/cols of vertices
 def hex_grid_dims(cellrows, cellcols):
@@ -211,6 +217,25 @@ def validate_graph_attributes(g):
 			raise AssertionError('edge attribute {} is set on some edges but not others'.format(repr(attr)))
 
 	return True
+
+# FIXME should be in some io module (note: reading function is currently in cyclebasis_provider)
+def save_gpos(pos, path):
+	# TODO should do validation once moved
+	import json
+	d = {
+		'labels':    list(pos.keys()),
+		'positions': [list(map(float, p)) for p in pos.values()],
+	}
+	s = json.dumps(d)
+	with open(path, 'w') as f:
+		f.write(s)
+
+def drop_extension(path):
+	import os
+	head,tail = os.path.split(path)
+	if '.' in tail:
+		tail, _ = tail.rsplit('.', 1)
+	return os.path.join(head, tail)
 
 if __name__ == '__main__':
 	main(list(sys.argv))

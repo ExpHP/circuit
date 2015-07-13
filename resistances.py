@@ -1,4 +1,5 @@
 
+import os
 import sys
 import math
 import random
@@ -49,13 +50,21 @@ def main():
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
 	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
 	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
-	parser.add_argument('--cyclebasis', '-c', type=str, default=None, help='.cyclebasis file. If not provided, will '
-		'check the input graph file for planar embedding information.')
+	parser.add_argument('--config', '-c', type=str, default=None, help='Path to defect trial config TOML. '
+		'Default is derived from circuit (BASENAME.defect.toml)')
 	parser.add_argument('--substeps', '-x', type=int, default=1, help='number of defects added per step')
-	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file')
+	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file. Default is derived '
+		'from circuit (BASENAME.results.json).')
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
 	parser.add_argument('--selection-mode', '-S', type=str, required=True, choices=SELECTION_MODES, help='TODO')
 	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
+
+	# cyclebasis options
+	group = parser.add_mutually_exclusive_group()
+	group.add_argument('--cyclebasis-cycles', type=str, default=None, help='Path to cyclebasis file. '
+		'Default is derived from circuit (BASENAME.cycles)')
+	group.add_argument('--cyclebasis-planar', type=str, default=None, help='Path to planar embedding info, which '
+		'can be provided in place of a .cycles file for planar graphs.  Default is BASENAME.planar.gpos.')
 
 	args = parser.parse_args(sys.argv[1:])
 
@@ -68,21 +77,30 @@ def main():
 		print('--substeps must be a positive integer.',file=sys.stderr)
 		sys.exit(1)
 
+	# common behavior for filepaths which are optionally specified
+	basename = drop_extension(args.input)
+	def get_optional_path(userpath, extension, argname):
+		autopath = basename + extension
+		if userpath is not None:
+			return userpath
+		if args.verbose:
+			print('Note: "{}" not specified!  Trying "{}"'.format(argname, autopath))
+		return autopath
+
+	args.config = get_optional_path(args.config, '.defect.toml', '--config')
+	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
+
+	selector = SELECTION_MODES[args.selection_mode]
+	deletor = DELETION_MODES[args.deletion_mode]
+	cbprovider = cbprovider_from_args(basename, args)
+	config = Config.from_file(args.config)
+
+	g = load_circuit(args.input)
+
 	# save the user some grief; fail early if output paths are not writable
 	for path in (args.output_json, args.output_pstats):
 		if path is not None:
 			error_if_not_writable(path)
-
-	selector = SELECTION_MODES[args.selection_mode]
-	deletor = DELETION_MODES[args.deletion_mode]
-
-	if args.cyclebasis is not None:
-		cbprovider = cyclebasis_provider.from_file(args.cyclebasis)
-	else:
-		cbprovider = cyclebasis_provider.planar()
-
-	# FIXME  name/return value discrepancy
-	g, config = read_graph(args.input)
 
 	# The function that worker threads will invoke
 	cmd_once = functools.partial(run_trial_nx,
@@ -97,7 +115,7 @@ def main():
 		verbose = args.verbose,
 	)
 	# Pass g via a temp file in case it is extremely large.
-	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to this
+	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to the wrapper
 	cmd_once = cmd_wrapper.func
 
 	if args.jobs == 1:
@@ -128,6 +146,44 @@ def main():
 		s = json.dumps(info)
 		with open(args.output_json, 'w') as f:
 			f.write(s)
+
+def cbprovider_from_args(basename, args):
+	# The order to check is
+	# User Cycles --> User Planar --> Auto Cycles --> Auto Planar --> "Nothing found"
+	def from_cycles(path): return cyclebasis_provider.from_file(path)
+	def from_planar(path): return cyclebasis_provider.planar.from_gpos(path)
+
+	for userpath, constructor in [
+		(args.cyclebasis_cycles, from_cycles),
+		(args.cyclebasis_planar, from_planar),
+	]:
+		if userpath is not None:
+			error_if_not_readable(userpath)
+			return constructor(userpath)
+
+	if args.verbose:
+		print('Note: "--cyclebasis-cycles" or "--cyclebasis-planar" not specified. Trying defaults...')
+	for autopath, constructor in [
+		(basename + '.cycles',      from_cycles),
+		(basename + '.planar.gpos', from_planar),
+	]:
+		if os.path.exists(autopath):
+			if args.verbose:
+				print('->Found possible cyclebasis info at "{}"'.format(autopath))
+			error_if_not_readable(autopath)
+			return constructor(autopath)
+	print('Error: Cannot find cyclebasis info. You need a .cycles or .planar.gpos file. '
+	      'For more info search for "--cyclebasis" in the program help (-h).', file=sys.stderr)
+	sys.exit(1)
+
+def error_if_not_readable(path):
+	try:
+		with open(path, 'r') as f:
+			pass
+	except IOError as e:
+		print("Error: Could not verify '{}' as readable:".format(path), file=sys.stderr)
+		print(str(e), file=sys.stderr)
+		sys.exit(1)
 
 # NOTE unintentional side-effect: creates an empty file if nothing exists
 def error_if_not_writable(path):
@@ -250,18 +306,11 @@ def visualize_selection_func(g, selection_func, nsteps):
 
 	plt.show()
 
-def read_graph(path):
-	# TODO allow manual specification of config path
-	g = load_circuit(path)
-	for ext in ('.circuit', '.gpickle'): # HACK
-		if path.endswith(ext):
-			cfgpath = swap_ext(path, ext, '.defect.toml')
-	config = Config.from_file(cfgpath)
-	return g, config
-
-def swap_ext(path, ext1, ext2):
-	assert path.endswith(ext1)
-	return path[:-len(ext1)] + ext2
+def drop_extension(path):
+	head,tail = os.path.split(path)
+	if '.' in tail:
+		tail, _ = tail.rsplit('.', 1)
+	return os.path.join(head, tail)
 
 def graph_info_circuit(circuit):
 	return {

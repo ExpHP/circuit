@@ -12,7 +12,7 @@ from resistances_common import *
 
 import graph.path as vpath
 from buildcb import build_cyclebasis_terminal
-from util import assertRaises, zip_matching_length
+from util import assertRaises, zip_matching_length, unzip_dict
 
 def main(argv):
 	parser = argparse.ArgumentParser()
@@ -407,17 +407,6 @@ def cycles_upto_impl(g, n, path):
 			yield from cycles_upto_impl(g, n-1, path + (nbr,))
 
 #-----------------------------------------------------------
-
-# takes a dict `d` whose values are iterable (and of equal length N) and returns
-#  dicts d1,d2,...,dN such that dn[k] == d[k][n]
-def unzip_dict(d):
-	zipped = zip_matching_length(*d.values())
-	return [{k:v for k,v in zip(d.keys(), x)} for x in zipped]
-
-_d1,_d2 = unzip_dict({'a':(1,2),'b':(3,4)})
-assert _d1 == {'a': 1, 'b': 3}
-assert _d2 == {'a': 2, 'b': 4}
-assertRaises(ValueError, unzip_dict, {'a':(1,2),'b':(3,)})
 
 #-----------------------------------------------------------
 

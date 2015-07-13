@@ -3,6 +3,7 @@ import json
 import networkx as nx
 import graph.cyclebasis.planar
 from graph.cyclebasis.builder import CycleBasisBuilder
+from util import unzip_dict
 
 __all__ = [
 	'planar',
@@ -15,17 +16,45 @@ __all__ = [
 
 # Uses planar embedding info from graph
 class planar:
+	def __init__(self, pos):
+		''' pos: dict of v: (x,y) '''
+		self.__pos = pos
+
+	@classmethod
+	def from_gpos(cls, path):
+		pos = read_gpos(path)
+		return cls(pos)
+
 	def cbupdater(self):
 		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
-		xs = {v:g.node[v]['x'] for v in g}
-		ys = {v:g.node[v]['y'] for v in g}
-
+		xs,ys = unzip_dict(self.__pos)
 		return graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
 
 	def info(self):
 		return {'mode': 'from planar embedding'}
+
+# TODO move into some io module maybe
+def read_gpos(path):
+	from util import zip_matching_length
+	with open(path) as f:
+		s = f.read()
+	d = json.loads(s)
+
+	pos = {}
+	for label, position in zip_matching_length(d['labels'], d['positions']):
+		pos[label] = tuple(map(float, position))
+
+	# make sure we don't have xy's and xyz's mixed together
+	if len(pos) > 0:
+		lengths = list(map(len, pos.values()))
+		expected = lengths.pop()
+		if not all(x == expected for x in lengths):
+			# TODO could give label of first bad item
+			raise RuntimeError('Mismatched dimensions in gpos file.')
+
+	return pos
 
 # Loaded from separate file
 class from_file:

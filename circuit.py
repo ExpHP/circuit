@@ -112,17 +112,94 @@ def validate_circuit(circuit):
 
 def save_circuit(circuit, path):
 	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
-	nx.write_gml(g, path)
+	__save_networkx(g, path)
+
+# TODO move to separate io module
+# astonishingly, it is easier to just roll my own format than to find
+#  one usable for my purposes among networkx's offerings
+def __save_networkx(g, path):
+	import json
+	# NOTE: should call a graph validation function first to check that all attributes
+	#        are defined on all nodes and edges.  I'm sure I have one somewhere hiding
+	#        as an internal utility function...
+
+	if g.is_multigraph():
+		raise ValueError('Multigraphs not supported.') # too much hassle to do them right
+
+	nodes = list(g.nodes())
+	edges = list(g.edges())
+	gattrs = dict(g.graph)
+
+	nattrs = dict()
+	if len(nodes) > 0:
+		node_set = set(nodes)
+		for attr in g.node[nodes[0]]:
+			d = nx.get_node_attributes(g, attr)
+			assert set(d) == node_set
+			nattrs[attr] = [d[n] for n in nodes]
+
+	eattrs = dict()
+	if len(edges) > 0:
+		edge_set = set(edges)
+		s0, t0 = edges[0]
+		for attr in g.edge[s0][t0]:
+			d = nx.get_edge_attributes(g, attr)
+			assert set(d) == edge_set
+			eattrs[attr] = [d[e] for e in edges]
+
+	d = {
+		'directed':   g.is_directed(),
+		'nodes':      nodes,
+		'edges':      edges,
+		'graph_attr': gattrs,
+		'edge_attr':  eattrs,
+		'node_attr':  nattrs,
+	}
+	s = json.dumps(d)
+	with open(path, 'w') as f:
+		f.write(s)
 
 def load_circuit(path):
 	# FIXME remove this later
 	if path.endswith('.gpickle'): # old format
 		return nx.read_gpickle(path)
 	else:
-		# NOTE: we deliberately do not relabel the nodes as other files may specify nodes by name.
-		g = nx.read_gml(path)
+		g = __load_networkx(path)
 		circuit = map_edge_attributes(g, SAVED_TO_INTERNAL_EATTR)
 		return circuit
+
+# TODO move to separate io module
+def __load_networkx(path):
+	import json
+	with open(path) as f:
+		s = f.read()
+	d = json.loads(s)
+
+	if d['directed']: g = nx.DiGraph()
+	else:             g = nx.Graph()
+
+	nodes = list(d['nodes'])
+	edges = list(map(tuple, d['edges']))
+
+	if len(nodes) != len(set(nodes)): raise RuntimeError('Duplicate node!')
+	# TODO The same error for edges (have to account for undirected/directed and blehhhck its boring)
+
+	g.add_nodes_from(nodes)
+	g.add_edges_from(edges)
+	for attr, values in d['node_attr'].items():
+		if len(values) != len(nodes):
+			raise RuntimeError('Node attribute {} has incorrect number of elements!'.format(repr(attr)))
+		nx.set_node_attributes(g, attr, {n:value for n,value in zip(nodes, values)})
+
+	for attr, values in d['edge_attr'].items():
+		if len(values) != len(edges):
+			raise RuntimeError('Edge attribute {} has incorrect number of elements!'.format(repr(attr)))
+		nx.set_edge_attributes(g, attr, {e:value for e,value in zip(edges, values)})
+
+	for attr, value in d['graph_attr'].items():
+		g.graph[attr] = value
+
+	return g
 
 def circuit_edge_sign(circuit, s, t):
 	positive_source = circuit.edge[s][t][EATTR_SOURCE]

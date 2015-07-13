@@ -164,6 +164,34 @@ def dict_inverse(d):
 	if len(set(d.values())) != len(d): raise ValueError('dictionary is not one-to-one!')
 	return {v:k for k,v in d.items()}
 
+# takes a dict `d` whose values are iterable (and of equal length N) and returns
+#  dicts d1,d2,...,dN such that dn[k] == d[k][n]
+def unzip_dict(d):
+	zipped = zip_matching_length(*d.values())
+	return [{k:v for k,v in zip(d.keys(), x)} for x in zipped]
+
+_d1,_d2 = unzip_dict({'a':(1,2),'b':(3,4)})
+assert _d1 == {'a': 1, 'b': 3}
+assert _d2 == {'a': 2, 'b': 4}
+assertRaises(ValueError, unzip_dict, {'a':(1,2),'b':(3,)})
+
+# takes dicts d1,d2,...,dN with matching keys and returns a dict `d`
+#  of tuples   d[k] == (d1[k], d2[k], ... dN[k])
+def zip_dict(*ds):
+	if len(ds) == 0: return {}
+
+	keys = set(ds[0]) # used to synchronize order of lists
+	values = []
+	for d in ds:
+		if set(d) != keys:
+			raise ValueError('Keys do not match.')
+		values.append([d[k] for k in keys])
+
+	zipped = zip_matching_length(*values)
+	return {k:tuple(x) for k,x in zip(keys, zipped)}
+
+assert zip_dict({'a': 1}, {'a': 2}) == {'a': (1,2)}
+
 if __name__ == '__main__':
 	import doctest
 	doctest.testmod()
