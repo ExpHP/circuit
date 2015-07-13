@@ -9,4 +9,5 @@ type (but *what* is stored of course varies between formats!)
 '''
 from . import graph
 from . import gpos
+from . import cycles
 

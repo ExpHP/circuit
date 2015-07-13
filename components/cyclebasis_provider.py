@@ -45,9 +45,9 @@ class from_file:
 		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
-		with open(self.path) as f:
-			s = f.read()
-		return json.loads(s)
+		# TODO we should validate the cyclebasis against g here
+		# (I thought I had a method which did this, but can't find it...)
+		return fileio.cycles.read_cycles(self.path, repeatfirst=True)
 
 	def info(self):
 		return {

@@ -48,8 +48,8 @@ def main(argv):
 			print('Generating fallback cycles')
 		fallback = nx.cycle_basis(g)
 
-		cyclebasis = build_cyclebasis_terminal(good, fallback, thorough=True, verbose=args.verbose) # XXX thorough
-		write_cyclebasis(args.output_cb, cyclebasis)
+		cyclebasis = build_cyclebasis_terminal(good, fallback, thorough=False, verbose=args.verbose)
+		fileio.cycles.write_cycles(cyclebasis, args.output_cb)
 
 def make_circuit(cellrows, cellcols):
 	g = nx.Graph()
@@ -113,11 +113,6 @@ def collect_good_cycles(g, cellrows, cellcols):
 		result.extend(cycles_upto(g, batv, 4))
 
 	return result
-
-def write_cyclebasis(path, cb):
-	s = json.dumps(list(cb))
-	with open(path, 'w') as f:
-		f.write(s)
 
 def validate_paths(g, paths):
 	for path in paths:
