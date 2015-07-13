@@ -100,15 +100,10 @@ def make_circuit(cellrows, cellcols):
 	for v in gridvs[-1][topstart::2]:
 		add_wire(g,v,topv)
 
-	deletable = {v: True for v in g}
-	deletable[topv] = False
-	deletable[botv] = False
-
 	measure_edge = (botv, topv)
+	return g, xs, ys, measure_edge
 
-	return g, xs, ys, deletable, measure_edge
-
-def save_output(path, g, xs, ys, deletable, measure_edge):
+def save_output(path, g, xs, ys, measure_edge):
 	save_circuit(g, path)
 
 	basename = drop_extension(path)

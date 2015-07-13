@@ -20,7 +20,6 @@ from util import multiprocessing_dill, TempfileWrapper
 
 from circuit import MeshCurrentSolver, CircuitBuilder, load_circuit
 import graph.cyclebasis.planar
-from resistances_common import *
 
 from components import node_selection
 from components import node_deletion
