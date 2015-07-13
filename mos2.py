@@ -8,11 +8,12 @@ import itertools
 import numpy as np
 import networkx as nx
 
-from resistances_common import *
-
 import graph.path as vpath
 from buildcb import build_cyclebasis_terminal
-from util import assertRaises, zip_matching_length, unzip_dict
+
+import resistances
+import filetypes.internal as fileio
+from circuit import save_circuit
 
 def main(argv):
 	parser = argparse.ArgumentParser()
@@ -30,12 +31,11 @@ def main(argv):
 		print('Generating graph and attributes')
 	g = make_circuit(cellrows, cellcols)
 	xys = full_xy_dict(cellrows, cellcols)
-	deletable = full_deletable_dict(cellrows, cellcols)
 	measured_edge = battery_vertices()
 
 	if args.verbose:
 		print('Saving circuit')
-	save_circuit(args.output, g, xys, deletable, measured_edge)
+	save_output(args.output, g, xys, measured_edge)
 
 	if args.output_cb is not None:
 		if args.verbose:
@@ -48,7 +48,7 @@ def main(argv):
 			print('Generating fallback cycles')
 		fallback = nx.cycle_basis(g)
 
-		cyclebasis = build_cyclebasis_terminal(good, fallback, thorough=True,verbose=args.verbose) # XXX thorough
+		cyclebasis = build_cyclebasis_terminal(good, fallback, thorough=True, verbose=args.verbose) # XXX thorough
 		write_cyclebasis(args.output_cb, cyclebasis)
 
 def make_circuit(cellrows, cellcols):
@@ -63,27 +63,20 @@ def make_circuit(cellrows, cellcols):
 
 	return g
 
-def save_circuit(path, g, xys, deletable, measure_edge):
-	xs,ys = unzip_dict(xys)
+def save_output(path, g, xys, measure_edge):
+	save_circuit(g, path)
+
+	basename = drop_extension(path)
 
 	# remove e.g. numpy type information from floats
-	xs = {v:float(x) for v,x in xs.items()}
-	ys = {v:float(x) for v,x in ys.items()}
+	xys = {v:tuple(map(float, xy)) for v,xy in xys.items()}
+	# note we do not produce '.planar.gpos' because this is not planar!
+	fileio.gpos.write_gpos(xys, basename + '.display.gpos')
 
-	nx.set_node_attributes(g, VATTR_X, xs)
-	nx.set_node_attributes(g, VATTR_Y, ys)
-	nx.set_node_attributes(g, VATTR_REMOVABLE, deletable)
-
-	# set edge that will have its current measured
-	s,t = measure_edge
-	g.graph[GATTR_MEASURE_SOURCE] = s
-	g.graph[GATTR_MEASURE_TARGET] = t
-
-	assert validate_graph_attributes(g)
-
-	nx.set_node_attributes(g, 'pos', {v:(xs[v],ys[v]) for v in xs}) # XXX
-
-	nx.write_gpickle(g, path)
+	config = resistances.Config()
+	config.set_measured_edge(*measure_edge)
+	config.set_no_defect([])
+	config.save(basename + '.defect.toml')
 
 #-----------------------------------------------------------
 
@@ -135,29 +128,6 @@ def validate_paths(g, paths):
 		for s,t in vpath.edges(path):
 			if not g.has_edge(s,t):
 				raise AssertionError('graph does not contain edge ({},{})! (Path: {})'.format(repr(s),repr(t),path))
-	return True
-
-#-----------------------------------------------------------
-
-# Verifies that any node/edge attributes in g are completely defined for all nodes/edges.
-# Raises an error or returns True (for use in assertions)
-def validate_graph_attributes(g):
-	all_node_attributes = set()
-	for v in g:
-		all_node_attributes.update(g.node[v])
-
-	for attr in all_node_attributes:
-		if len(nx.get_node_attributes(g, attr)) != g.number_of_nodes():
-			raise AssertionError('node attribute {} is set on some nodes but not others'.format(repr(attr)))
-
-	all_edge_attributes = set()
-	for s,t in g.edges():
-		all_edge_attributes.update(g.edge[s][t])
-
-	for attr in all_edge_attributes:
-		if len(nx.get_edge_attributes(g, attr)) != g.number_of_edges():
-			raise AssertionError('edge attribute {} is set on some edges but not others'.format(repr(attr)))
-
 	return True
 
 #-----------------------------------------------------------
@@ -216,13 +186,6 @@ def add_battery(g, s, t, voltage):
 
 #-----------------------------------------------------------
 # Top level methods for building attribute dicts
-
-# Which nodes are allowed to be selected for defects
-def full_deletable_dict(cellrows, cellcols):
-	d = {}
-	d.update({v:True  for v in hex_grid_vertices(cellrows, cellcols)})
-	d.update({v:False for v in battery_vertices()})
-	return d
 
 # x,y tuples (for visualization purposes only)
 def full_xy_dict(cellrows, cellcols):
@@ -408,7 +371,12 @@ def cycles_upto_impl(g, n, path):
 
 #-----------------------------------------------------------
 
-#-----------------------------------------------------------
+def drop_extension(path):
+	import os
+	head,tail = os.path.split(path)
+	if '.' in tail:
+		tail, _ = tail.rsplit('.', 1)
+	return os.path.join(head, tail)
 
 if __name__ == '__main__':
 	main(list(sys.argv))
