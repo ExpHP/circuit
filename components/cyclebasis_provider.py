@@ -4,6 +4,7 @@ import networkx as nx
 import graph.cyclebasis.planar
 from graph.cyclebasis.builder import CycleBasisBuilder
 from util import unzip_dict
+import filetypes.internal as fileio
 
 __all__ = [
 	'planar',
@@ -22,7 +23,7 @@ class planar:
 
 	@classmethod
 	def from_gpos(cls, path):
-		pos = read_gpos(path)
+		pos = fileio.gpos.read_gpos(path)
 		return cls(pos)
 
 	def cbupdater(self):
@@ -34,27 +35,6 @@ class planar:
 
 	def info(self):
 		return {'mode': 'from planar embedding'}
-
-# TODO move into some io module maybe
-def read_gpos(path):
-	from util import zip_matching_length
-	with open(path) as f:
-		s = f.read()
-	d = json.loads(s)
-
-	pos = {}
-	for label, position in zip_matching_length(d['labels'], d['positions']):
-		pos[label] = tuple(map(float, position))
-
-	# make sure we don't have xy's and xyz's mixed together
-	if len(pos) > 0:
-		lengths = list(map(len, pos.values()))
-		expected = lengths.pop()
-		if not all(x == expected for x in lengths):
-			# TODO could give label of first bad item
-			raise RuntimeError('Mismatched dimensions in gpos file.')
-
-	return pos
 
 # Loaded from separate file
 class from_file:

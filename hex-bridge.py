@@ -9,6 +9,7 @@ import networkx as nx
 import resistances
 from circuit import save_circuit
 from util import zip_dict
+import filetypes.internal as fileio
 
 # (these top two should be flipped x/y)
 # Column numbers: (zigzag dimension)
@@ -108,11 +109,6 @@ def make_circuit(cellrows, cellcols):
 	return g, xs, ys, deletable, measure_edge
 
 def save_output(path, g, xs, ys, deletable, measure_edge):
-
-	#TODO may no longer be worthwhile now that we call out to functions which
-	#  ought to do validation for us (however I don't think it actually does currently!)
-	assert validate_graph_attributes(g)
-
 	save_circuit(g, path)
 
 	basename = drop_extension(path)
@@ -122,7 +118,7 @@ def save_output(path, g, xs, ys, deletable, measure_edge):
 	ys = {v:float(x) for v,x in ys.items()}
 
 	pos = zip_dict(xs, ys)
-	save_gpos(pos, basename + '.planar.gpos')
+	fileio.gpos.write_gpos(pos, basename + '.planar.gpos')
 
 	config = resistances.Config()
 	config.set_measured_edge(*measure_edge)
@@ -196,39 +192,6 @@ def add_resistor(g, s, t, resistance):
 def add_battery(g, s, t, voltage):
 	add_wire(g,s,t)
 	g.edge[s][t][EATTR_VOLTAGE] = voltage
-
-# Verifies that any node/edge attributes in g are completely defined for all nodes/edges.
-# Raises an error or returns True (for use in assertions)
-def validate_graph_attributes(g):
-	all_node_attributes = set()
-	for v in g:
-		all_node_attributes.update(g.node[v])
-
-	for attr in all_node_attributes:
-		if len(nx.get_node_attributes(g, attr)) != g.number_of_nodes():
-			raise AssertionError('node attribute {} is set on some nodes but not others'.format(repr(attr)))
-
-	all_edge_attributes = set()
-	for s,t in g.edges():
-		all_edge_attributes.update(g.edge[s][t])
-
-	for attr in all_edge_attributes:
-		if len(nx.get_edge_attributes(g, attr)) != g.number_of_edges():
-			raise AssertionError('edge attribute {} is set on some edges but not others'.format(repr(attr)))
-
-	return True
-
-# FIXME should be in some io module (note: reading function is currently in cyclebasis_provider)
-def save_gpos(pos, path):
-	# TODO should do validation once moved
-	import json
-	d = {
-		'labels':    list(pos.keys()),
-		'positions': [list(map(float, p)) for p in pos.values()],
-	}
-	s = json.dumps(d)
-	with open(path, 'w') as f:
-		f.write(s)
 
 def drop_extension(path):
 	import os
