@@ -8,8 +8,11 @@ __all__ = [
 ]
 
 class uniform:
-	def selection_func(self, choices, initial_g, past_selections):
+	def select_one(self, choices, initial_g, past_selections):
 		return random.choice(list(choices))
+
+	def is_done(self, choices):
+		return len(choices) == 0
 
 	def info(self):
 		return {'mode': 'uniform'}
@@ -18,7 +21,7 @@ class by_deleted_neighbors:
 	def __init__(self, weights):
 		self.weights = weights
 
-	def selection_func(self, choices, initial_g, past_selections):
+	def select_one(self, choices, initial_g, past_selections):
 		choices = list(choices) # make reusable iter
 
 		# count previously selected neighbors of each choice
@@ -34,6 +37,9 @@ class by_deleted_neighbors:
 		choice_weights = (self.weights[weight_ids[v]] for v in choices)
 
 		return pick_weighted(choices, choice_weights)
+
+	def is_done(self, choices):
+		return len(choices) == 0
 
 	def info(self):
 		return {

@@ -107,8 +107,8 @@ def main():
 		steps = args.steps,
 		substeps = args.substeps,
 		cbprovider = cbprovider,
-		selection_func = selector.selection_func,
-		deletion_func  = deletor.deletion_func,
+		selector = selector,
+		deletion_func = deletor.deletion_func,
 		measured_edge = config.get_measured_edge(),
 		no_defect = config.get_no_defect(),
 		verbose = args.verbose,
@@ -225,7 +225,7 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
+def run_trial_nx(g, steps, cbprovider, selector, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
 	no_defect = set(no_defect)
 
 	if verbose:
@@ -252,13 +252,14 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, measured_e
 		deleted = []
 		if step > 0:  # first step is initial state
 
-			step_substeps = min(substeps, len(choices))
-			if step_substeps == 0:
+			if selector.is_done(choices):
 				break  # graph can't change from previous step;  end trial
 
-			for _ in range(step_substeps):
+			for _ in range(substeps):
+				if selector.is_done(choices):
+					break  # ran out of changes mid-step.  end this step early
 
-				vdeleted = selection_func(choices, initial_g, past_selections)
+				vdeleted = selector.select_one(choices, initial_g, past_selections)
 				deletion_func(solver, vdeleted)
 
 				past_selections.append(vdeleted)
