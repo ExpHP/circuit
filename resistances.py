@@ -194,9 +194,6 @@ def error_if_not_writable(path):
 		print(str(e), file=sys.stderr)
 		sys.exit(1)
 
-#	visualize_selection_func(read_graph(args.input), selection_funcs.uniform, 500)
-#	visualize_selection_func(read_graph(args.input), selection_funcs.near_deleted, 500)
-
 def run_sequential(f,*,times):
 	return [f() for _ in range(times)]
 
@@ -237,7 +234,7 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, measured_e
 	initial_g = g.copy()
 
 	trial_info = {
-		'graph': graph_info_nx(g),
+		'graph': graph_info(g),
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
@@ -283,74 +280,17 @@ def run_trial_nx(g, steps, cbprovider, selection_func, deletion_func, measured_e
 
 	return trial_info
 
-def visualize_selection_func(g, selection_func, nsteps):
-	initial_g = g.copy()
-	for _ in range(nsteps):
-		deleted = selection_func(g, initial_g)
-		remove_nodes_from(g, deleted)
-
-	import matplotlib.pyplot as plt
-	from functools import partial
-
-	fig, ax = plt.subplots()
-	ax.set_aspect('equal')
-	xs = nx.get_node_attributes(initial_g, 'x')
-	ys = nx.get_node_attributes(initial_g, 'y')
-	pos={v:(xs[v],ys[v]) for v in initial_g}
-
-	draw = partial(nx.draw_networkx, g, pos, False, ax=ax, node_size=50)
-	draw(edgelist=initial_g.edges(), nodelist=[])
-	draw(edgelist=[], nodelist=set(initial_g)-set(g), node_color='r')
-	draw(edgelist=[], nodelist=set(g), node_color='g')
-
-	plt.show()
-
 def drop_extension(path):
 	head,tail = os.path.split(path)
 	if '.' in tail:
 		tail, _ = tail.rsplit('.', 1)
 	return os.path.join(head, tail)
 
-def graph_info_circuit(circuit):
-	return {
-		'num_vertices': circuit.num_vertices(),
-		'num_edges':    circuit.num_edges(),
-	}
-
-def graph_info_nx(g):
+def graph_info(g):
 	return {
 		'num_vertices': g.number_of_nodes(),
 		'num_edges':    g.number_of_edges(),
 	}
-
-def other_endpoint_nx(e, s):
-	(v1,v2) = e
-	if s == v1: return v2
-	elif s == v2: return v1
-	else:
-		raise ValueError('{} is not an endpoint of the edge ({},{})'.format(s,v1,v2))
-
-def copy_without_attributes_nx(g):
-	result = nx.Graph()
-	result.add_nodes_from(g)
-	result.add_edges_from(g.edges())
-	return result
-
-def set_node_attributes_checked(g, name, d):
-	if any(v not in d for v in g):
-		raise KeyError('attribute dict does not include all nodes!')
-	nx.set_node_attributes(g, name, d)
-
-def write_plottable_nx(g, path, pos):
-	outg = copy_without_attributes_nx(g)
-	set_node_attributes_checked(outg, 'pos', pos)
-
-	nx.write_gpickle(outg, path)
-
-def write_cyclebasis(cyclebasis, path):
-	s = json.dumps(cyclebasis)
-	with open(path, 'w') as f:
-		f.write(s)
 
 class Config:
 	def __init__(self, measured_edge=None, no_defect=None):
