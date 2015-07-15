@@ -5,6 +5,7 @@ __all__ = [
 	'DeletionMode',
 	'annihilation',
 	'multiply_resistance',
+	'from_info',
 ]
 
 class DeletionMode(metaclass=ABCMeta):
@@ -17,12 +18,21 @@ class DeletionMode(metaclass=ABCMeta):
 	def deletion_func(self, solver, v):
 		''' Add a defect to a ``MeshCurrentSolver``. '''
 		pass
+
 	@abstractmethod
 	def info(self):
-		''' Get representation for ``results.json``.
-
-		Return value is a ``dict`` with at minimum a ``'mode'`` value (a string). '''
+		''' Get representation for ``results.json``. '''
 		pass
+
+	@classmethod
+	@abstractmethod
+	def from_info(cls, info):
+		''' Recreate from info(). '''
+		pass
+
+	def __eq__(self, other):
+		# (assumes info() provides all of the meaningful content (and only that content))
+		return type(self) is type(other) and self.info() == other.info()
 
 #--------------------------------------------------------
 
@@ -33,6 +43,10 @@ class annihilation(DeletionMode):
 
 	def info(self):
 		return {'mode': 'direct removal'}
+
+	@classmethod
+	def from_info(cls, info):
+		return cls()
 
 #--------------------------------------------------------
 
@@ -56,4 +70,39 @@ class multiply_resistance(DeletionMode):
 			'factor': self.factor,
 			'idempotent': self.idempotent,
 		}
+
+	@classmethod
+	def from_info(cls, info):
+		return cls(
+			factor = info['factor'],
+			idempotent = info['idempotent'],
+		)
+
+#--------------------------------------------------------
+
+# Even if modestrings are changed, the old names should remain here
+#  in addition to the new names, for backwards compatibility.
+CLASSES_FROM_MODESTRS = {
+	'direct removal': annihilation,
+	'multiply resistance': multiply_resistance,
+}
+
+def from_info(info):
+	''' Recreate a DeletionMode from its info. '''
+	modestr = info['mode']
+	cls = CLASSES_FROM_MODESTRS[modestr]
+	return cls.from_info(info)
+
+#--------------------------------------------------------
+
+def test_from_info(obj):
+	''' Test that an object can be recovered from ``from_info`` '''
+	info = obj.info()
+	obj2 = from_info(info)
+	assert type(obj) is type(obj2)
+	assert obj == obj2
+
+test_from_info(annihilation())
+test_from_info(multiply_resistance(100., False))
+test_from_info(multiply_resistance(100., True))
 
