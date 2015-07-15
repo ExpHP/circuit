@@ -24,7 +24,9 @@ class SelectionMode(metaclass=ABCMeta):
 		pass
 	@abstractmethod
 	def info(self):
-		''' Get representation for ``results.json`` '''
+		''' Get representation for ``results.json``.
+
+		Return value is a ``dict`` with at minimum a ``'mode'`` value (a string). '''
 		pass
 
 class Selector(metaclass=ABCMeta):

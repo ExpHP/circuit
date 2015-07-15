@@ -90,7 +90,7 @@ def main():
 	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
 
 	selection_mode = SELECTION_MODES[args.selection_mode]
-	deletor = DELETION_MODES[args.deletion_mode]
+	deletion_mode = DELETION_MODES[args.deletion_mode]
 	cbprovider = cbprovider_from_args(basename, args)
 	config = Config.from_file(args.config)
 
@@ -108,7 +108,7 @@ def main():
 		substeps = args.substeps,
 		cbprovider = cbprovider,
 		selection_mode = selection_mode,
-		deletion_func = deletor.deletion_func,
+		deletion_mode = deletion_mode,
 		measured_edge = config.get_measured_edge(),
 		no_defect = config.get_no_defect(),
 		verbose = args.verbose,
@@ -129,7 +129,7 @@ def main():
 	info = {}
 
 	info['selection_mode'] = selection_mode.info()
-	info['defect_mode'] = deletor.info()
+	info['defect_mode'] = deletion_mode.info()
 	info['cyclebasis_gen'] = cbprovider.info()
 
 	info['process_count'] = args.jobs
@@ -225,13 +225,14 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
+def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_edge, *, no_defect=[], substeps=1, verbose=False):
 	no_defect = set(no_defect)
 
 	if verbose:
 		print('Starting')
 
 	selector = selection_mode.selector(g)
+	deletion_func = deletion_mode.deletion_func
 
 	trial_info = {
 		'graph': graph_info(g),
