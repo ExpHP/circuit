@@ -89,7 +89,7 @@ def main():
 	args.config = get_optional_path(args.config, '.defect.toml', '--config')
 	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
 
-	selector = SELECTION_MODES[args.selection_mode]
+	selection_mode = SELECTION_MODES[args.selection_mode]
 	deletor = DELETION_MODES[args.deletion_mode]
 	cbprovider = cbprovider_from_args(basename, args)
 	config = Config.from_file(args.config)
@@ -107,7 +107,7 @@ def main():
 		steps = args.steps,
 		substeps = args.substeps,
 		cbprovider = cbprovider,
-		selector = selector,
+		selection_mode = selection_mode,
 		deletion_func = deletor.deletion_func,
 		measured_edge = config.get_measured_edge(),
 		no_defect = config.get_no_defect(),
@@ -128,7 +128,7 @@ def main():
 
 	info = {}
 
-	info['selection_mode'] = selector.info()
+	info['selection_mode'] = selection_mode.info()
 	info['defect_mode'] = deletor.info()
 	info['cyclebasis_gen'] = cbprovider.info()
 
@@ -225,13 +225,13 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selector, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
+def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_func, measured_edge, *, no_defect=[], substeps=1, verbose=False):
 	no_defect = set(no_defect)
 
 	if verbose:
 		print('Starting')
 
-	initial_g = g.copy()
+	selector = selection_mode.selector(g)
 
 	trial_info = {
 		'graph': graph_info(g),
@@ -242,7 +242,8 @@ def run_trial_nx(g, steps, cbprovider, selector, deletion_func, measured_edge, *
 	choices = [v for v in g if is_deletable(v)]
 	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), cbupdater=cbprovider.cbupdater())
 
-	past_selections = []
+	def no_defects_possible():
+		return len(choices) == 0 or selector.is_done()
 
 	step_info = trial_info['steps']
 	for step in range(steps):
@@ -252,19 +253,17 @@ def run_trial_nx(g, steps, cbprovider, selector, deletion_func, measured_edge, *
 		deleted = []
 		if step > 0:  # first step is initial state
 
-			if selector.is_done(choices):
-				break  # graph can't change from previous step;  end trial
+			if no_defects_possible():
+				break  # end trial
 
 			for _ in range(substeps):
-				if selector.is_done(choices):
-					break  # ran out of changes mid-step.  end this step early
+				if no_defects_possible():
+					break  # stop adding defects (but do finish computing this step)
 
-				vdeleted = selector.select_one(choices, initial_g, past_selections)
+				vdeleted = selector.select_one(choices)
 				deletion_func(solver, vdeleted)
 
-				past_selections.append(vdeleted)
 				choices.remove(vdeleted)
-
 				deleted.append(vdeleted)
 
 		# the big heavy calculation!
