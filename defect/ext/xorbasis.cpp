@@ -12,8 +12,8 @@
 #include <sstream>
 #include <iostream>
 
-#include "vectorset.hpp"
-#include "xorbasis.h"
+#include "defect/ext/vectorset.hpp"
+#include "defect/ext/xorbasis.h"
 
 using namespace std;
 

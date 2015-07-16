@@ -39,7 +39,7 @@ ctypedef unsigned uint
 ctypedef unsigned column_t
 ctypedef size_t   identity_t
 
-cdef extern from "xorbasis.h":
+cdef extern from "defect/ext/xorbasis.h":
     cdef cppclass _XorBasisBuilder:
         _XorBasisBuilder()
         size_t add(vector[uint])

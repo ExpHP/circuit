@@ -5,7 +5,7 @@
 #include <utility> // pair
 #include <vector>
 
-#include "vectorset.hpp"
+#include "defect/ext/vectorset.hpp"
 
 //------------------------------------------------------------------------------
 

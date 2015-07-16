@@ -4,7 +4,7 @@
 #include <ctime>
 #include <cassert>
 
-#include "graph/cyclebasis/xorbasis.cpp"
+#include "defect/ext/xorbasis.cpp"
 
 // quick hack to allow the use of an initialization list to construct Rows/Augs
 // e.g. Row row = R{ 1, 4, 9, 16 };

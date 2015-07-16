@@ -6,7 +6,7 @@
 #	import graph.cyclebasis.cXorBasis as xorbasis
 #except ImportError:
 #	import graph.cyclebasis.pyXorBasis as xorbasis
-import graph.cyclebasis.cXorBasis as xorbasis
+import defect.ext.cXorBasis as xorbasis
 
 import graph.path as vpath
 
