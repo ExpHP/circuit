@@ -267,7 +267,7 @@ class MeshCurrentSolver:
 
 		validate_circuit(circuit)
 
-		self.g = circuit
+		self.g = circuit.copy()
 		self.cbupdater = cbupdater
 
 		self.cbupdater.init(cyclebasis)
@@ -355,6 +355,9 @@ class MeshCurrentSolver:
 	def cycle_currents(self):
 		return compute_cycle_currents(self.resistance_matrix.get(), self.voltage_vector.get(), self.cyclebasis.get())
 
+	# NOTE deficiency in API; No "correct" way for an outsider to access the state of the graph.
+	# It is tempting to use the output of this to reconstruct one, but such a reconstruction would
+	#   be missing any isolated vertices in the graph.
 	def get_all_currents(self):
 		'''
 		Compute all currents in the circuit.
