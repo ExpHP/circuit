@@ -35,6 +35,8 @@ class CycleBasisBuilder:
 		self = cls()
 
 		vcycles = list(vcycles)
+		if any(c[0] != c[-1] for c in vcycles):
+			raise RuntimeError('Expected cycles with repeated first vertex!')
 		ecycles = list(map(self.edge_mapper.map_path, vcycles))
 		identities = self.basis.add_many(ecycles)
 
