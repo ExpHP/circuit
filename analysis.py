@@ -181,6 +181,32 @@ def trim_trial_by_current(trial_info, threshold=0.0):
 	result['steps'] = slice_steps(result['steps'], 0, zero_idx)
 	return result
 
+# FIXME annoying signature; unlike other "trial" functions, this takes the
+#  complete info and a trial index.  This is because the deletion mode is
+#  not present in the individual trial infos (can we change that?)
+# FIXME also don't like the idea/placement of this in general; it basically
+#  tries to simulate a trial, which means any changes to the trial runner may
+#  need to be reflected here
+def trial_edge_currents_at_step(g, cycles, info, trialid, step):
+	import components.node_deletion
+	from components.cyclebasis_provider import builder_cbupdater
+	from circuit import MeshCurrentSolver
+
+	# get the deletion func
+	deletion_mode = components.node_deletion.from_info(info['defect_mode'])
+	deletion_func = deletion_mode.deletion_func
+
+	# gather all vertices deleted at the specified step
+	arr = trialset_augmented_array(info['trials'])
+	deleted = arr['deleted_cum'][trialid][step]
+
+	solver = MeshCurrentSolver(g, cycles, builder_cbupdater())
+	for v in deleted:
+		deletion_func(solver, v)
+
+	currents = solver.get_all_currents()
+	return currents
+
 # True if all provided lists contain the same values up to where each is defined
 # (the lists may be of different length)
 def are_lists_consistent(its):
