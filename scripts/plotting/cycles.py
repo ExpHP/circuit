@@ -13,7 +13,12 @@ from util import window2
 from functools import partial
 
 def main():
-	parser = ArgumentParser(sys.argv[0])
+	# TODO
+	print('This script is old and requires some TLC', file=sys.stderr)
+	sys.exit(1)
+
+	parser = ArgumentParser(sys.argv[0], description='Generate an obnoxious number of '
+		'plots from a cyclebasis')
 	parser.add_argument('graph', help='graph .pickle file')
 	parser.add_argument('cyclebasis', help='cyclebasis .json file')
 	parser.add_argument('--output-dir', '-o', required=True, help='output directory (will be created)')

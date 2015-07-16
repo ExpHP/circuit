@@ -1,7 +1,4 @@
 
-if __name__ == '__main__' and __package__ is None:
-	__package__ = 'defect.plotting'
-
 import sys
 from functools import partial
 from defect.circuit import load_circuit

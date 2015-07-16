@@ -1,23 +1,13 @@
 #!/usr/bin/env python3
 
-if __name__ == "__main__" and __package__ is None:
-    __package__ = "defect.plotting"
-
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
 
-import pylibs.debug
-pylibs.debug.memlimit(4000)
-
-# FIXME should set up setup.py etc. etc. and fix imports in scripts like this to
-#   use absolute paths (prefix with package name) because this currently requires
-#   an evil modification to PYTHONPATH in order to work
-# Hell, many of these scripts don't even really belong in this repo. (most are untracked!)
-import filetypes.internal as fileio
-from circuit import load_circuit, MeshCurrentSolver
+import defect.filetypes.internal as fileio
+from defect.circuit import load_circuit, MeshCurrentSolver
 
 def main():
 	import argparse
