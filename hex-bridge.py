@@ -47,12 +47,13 @@ def main(argv):
 	parser = argparse.ArgumentParser()
 	parser.add_argument('rows', metavar='LENGTH', type=int)
 	parser.add_argument('cols', metavar='WIDTH', type=int)
-	parser.add_argument('--output', '-o', type=str, required=True, help='.gpickle output file')
+	parser.add_argument('--output', '-o', type=str, required=True, help='.circuit output file')
+	parser.add_argument('--cb', action='store_true', help='generate .cycles')
 
 	args = parser.parse_args(argv[1:])
 
 	values = make_circuit(args.rows, args.cols)
-	save_output(args.output, *values)
+	save_output(args.output, args.cb, *values)
 
 
 def make_circuit(cellrows, cellcols):
@@ -103,7 +104,7 @@ def make_circuit(cellrows, cellcols):
 	measure_edge = (botv, topv)
 	return g, xs, ys, measure_edge
 
-def save_output(path, g, xs, ys, measure_edge):
+def save_output(path, do_cb, g, xs, ys, measure_edge):
 	save_circuit(g, path)
 
 	basename = drop_extension(path)
@@ -112,13 +113,19 @@ def save_output(path, g, xs, ys, measure_edge):
 	xs = {v:float(x) for v,x in xs.items()}
 	ys = {v:float(x) for v,x in ys.items()}
 
+	gpos_path = basename + '.planar.gpos'
 	pos = zip_dict(xs, ys)
-	fileio.gpos.write_gpos(pos, basename + '.planar.gpos')
+	fileio.gpos.write_gpos(pos, gpos_path)
 
 	config = resistances.Config()
 	config.set_measured_edge(*measure_edge)
 	config.set_no_defect([])
 	config.save(basename + '.defect.toml')
+
+	if do_cb:
+		from graph.cyclebasis.planar import planar_cycle_basis_nx
+		cycles = planar_cycle_basis_nx(g, xs, ys)
+		fileio.cycles.write_cycles(cycles, basename + '.cycles')
 
 # Total number of rows/cols of vertices
 def hex_grid_dims(cellrows, cellcols):
