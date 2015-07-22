@@ -9,9 +9,9 @@
 
 from _defect import XorBasisBuilder # c++ version
 
-import graph.path as vpath
+import defect.graph.path as vpath
 
-from util import assertRaises
+from defect.util import assertRaises
 
 __all__ = [
 	'CycleBasisBuilder',

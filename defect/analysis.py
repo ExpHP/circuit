@@ -3,7 +3,7 @@
 import copy
 import bisect
 
-from util import zip_variadic, zip_matching_length
+from defect.util import zip_variadic, zip_matching_length
 
 import numpy as np
 
@@ -40,7 +40,6 @@ def trial_resistance(trial_info):
 	return map(lambda x: 1./x, trial_current(trial_info))
 
 def trial_array(trial_info):
-	import numpy
 	steps = trial_info['steps']
 	data_iter = zip_matching_length(*steps.values())
 
@@ -54,11 +53,10 @@ def trial_array(trial_info):
 		spec.append((name, type(value)))
 
 	assert all(type(v) == typ for v,(name,typ) in zip(data_tuples[0], spec))
-	return numpy.array(data_tuples, dtype=spec)
+	return np.array(data_tuples, dtype=spec)
 
 def trialset_array(trial_infos):
-	import numpy
-	return numpy.vstack(list(trial_array(info) for info in trial_infos))
+	return np.vstack(list(trial_array(info) for info in trial_infos))
 
 # FIXME there's some redundant functionality between this and previously existing "trialset"
 #  functions currently as the two different interfaces kind of work at odds to eachother
@@ -188,9 +186,9 @@ def trim_trial_by_current(trial_info, threshold=0.0):
 #  tries to simulate a trial, which means any changes to the trial runner may
 #  need to be reflected here
 def trial_edge_currents_at_step(g, cycles, info, trialid, step):
-	import components.node_deletion
-	from components.cyclebasis_provider import builder_cbupdater
-	from circuit import MeshCurrentSolver
+	from defect.components import node_deletion
+	from defect.components.cyclebasis_provider import builder_cbupdater
+	from defect.circuit import MeshCurrentSolver
 
 	# get the deletion func
 	deletion_mode = components.node_deletion.from_info(info['defect_mode'])

@@ -5,7 +5,7 @@
 
 import sys
 
-from graph.cyclebasis.builder import CycleBasisBuilder
+from defect.graph.cyclebasis.builder import CycleBasisBuilder
 
 __all__ = [
 	'main',

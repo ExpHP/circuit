@@ -6,8 +6,8 @@ import itertools
 
 import networkx as nx
 
-from util import assertRaises
-import graph.path as vpath
+from defect.util import assertRaises
+import defect.graph.path as vpath
 
 __all__ = [
 	'planar_cycle_basis',

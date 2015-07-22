@@ -5,7 +5,7 @@
 
 import itertools
 
-import util
+from .. import util
 
 def can_join(a, b, swapok=False):
 	return a[-1] == b[0] or (swapok and b[-1] == a[0])

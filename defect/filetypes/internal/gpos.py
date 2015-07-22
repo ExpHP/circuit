@@ -7,7 +7,7 @@ Used as a supplemental file to graphs.
 '''
 
 import json
-from util import zip_matching_length
+from defect.util import zip_matching_length
 
 # This exists partly because position data is *extremely* ubiquitous,
 # and often shows up for many different purposes (e.g. actual spatial

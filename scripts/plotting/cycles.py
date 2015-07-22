@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 import json
 
-from util import window2
+from defect.util import window2
 from functools import partial
 
 def main():

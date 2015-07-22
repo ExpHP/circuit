@@ -3,13 +3,12 @@ import numpy as np
 from scipy import sparse
 import scipy.sparse.linalg as spla
 
-from components import cyclebasis_provider
-import filetypes.internal.graph as graphio
-import graph.path as vpath
-import graph.cyclebasis
 import networkx as nx
 
-import util
+import defect.filetypes.internal as fileio
+from defect.components import cyclebasis_provider
+import defect.graph.path as vpath
+from defect.util import dict_inverse, edictget
 
 __all__ = [
 	'CircuitBuilder',
@@ -31,7 +30,7 @@ INTERNAL_TO_SAVED_EATTR = {
 	EATTR_RESISTANCE: 'res',
 	EATTR_VOLTAGE:    'volt',
 }
-SAVED_TO_INTERNAL_EATTR = util.dict_inverse(INTERNAL_TO_SAVED_EATTR)
+SAVED_TO_INTERNAL_EATTR = dict_inverse(INTERNAL_TO_SAVED_EATTR)
 
 # produce a sign factor (+/- 1) based on which side we're traveling an
 #  edge from.  This is to allow circuit components to appropriately
@@ -114,14 +113,14 @@ def validate_circuit(circuit):
 
 def save_circuit(circuit, path):
 	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
-	graphio.write_networkx(g, path)
+	fileio.graph.write_networkx(g, path)
 
 def load_circuit(path):
 	# FIXME remove this later
 	if path.endswith('.gpickle'): # old format
 		return nx.read_gpickle(path)
 	else:
-		g = graphio.read_networkx(path)
+		g = fileio.graph.read_networkx(path)
 		circuit = map_edge_attributes(g, SAVED_TO_INTERNAL_EATTR)
 		return circuit
 
@@ -396,7 +395,7 @@ def compute_cycles_from_edge(g, cyclebasis):
 		for e in vpath.edges(path):
 			sign = circuit_edge_sign(g, *e)
 
-			ecycles = util.edictget(cycles_from_edge, e)
+			ecycles = edictget(cycles_from_edge, e)
 			ecycles.append((pathI, sign))
 	return cycles_from_edge
 
@@ -412,7 +411,7 @@ def compute_resistance_matrix(g, cyclebasis, cycles_from_edge):
 		s,t = e
 		resistance = g.edge[s][t][EATTR_RESISTANCE]
 
-		ecycles = util.edictget(cycles_from_edge, e)
+		ecycles = edictget(cycles_from_edge, e)
 
 		# generate terms corresponding to this edge, which are +r between cycles that cross the
 		#  edge in the same direction, and -r between cycles that cross in opposite directions
@@ -433,7 +432,7 @@ def compute_cycle_currents(r_mat, v_vec, cyclebasis):
 	return solver(v_vec).reshape([len(cyclebasis)])
 
 def compute_single_edge_current(g, cycle_currents, cycles_from_edge, s, t):
-	ecycles = util.edictget(cycles_from_edge, (s,t))
+	ecycles = edictget(cycles_from_edge, (s,t))
 	esign   = circuit_edge_sign(g, s, t)
 	return esign * sum(cycle_currents[i] * csign for i, csign in ecycles)
 
@@ -521,7 +520,6 @@ def test_two_loop_circuit():
 
 def test_get_current_consistency():
 	import random
-	from components import cyclebasis_provider
 	g = nx.gnm_random_graph(5,16)
 	builder = CircuitBuilder(g)
 	for s,t in g.edges():

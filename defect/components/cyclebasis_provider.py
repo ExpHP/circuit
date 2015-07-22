@@ -1,10 +1,11 @@
 
 import json
 import networkx as nx
-import graph.cyclebasis.planar
-from graph.cyclebasis.builder import CycleBasisBuilder
-from util import unzip_dict
-import filetypes.internal as fileio
+
+import defect.filetypes.internal as fileio
+import defect.graph.cyclebasis.planar
+from defect.graph.cyclebasis.builder import CycleBasisBuilder
+from defect.util import unzip_dict
 
 __all__ = [
 	'planar',
@@ -31,7 +32,7 @@ class planar:
 
 	def new_cyclebasis(self, g):
 		xs,ys = unzip_dict(self.__pos)
-		return graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
+		return defect.graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
 
 	def info(self):
 		return {'mode': 'from planar embedding'}
@@ -95,7 +96,7 @@ class planar_cbupdater:
 	def init(self, cycles):
 		self.cycles = cycles
 	def remove_vertex(self, g, v):
-		self.cycles = graph.cyclebasis.planar.without_vertex(self.cycles, v)
+		self.cycles = defect.graph.cyclebasis.planar.without_vertex(self.cycles, v)
 	def get_cyclebasis(self):
 		return self.cycles
 

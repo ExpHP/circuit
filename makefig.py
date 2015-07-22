@@ -12,10 +12,10 @@ import json
 import math
 import sys
 
-from util import zip_matching_length
-from util.array import smash_equal
-from util.fit import *
-import analysis
+from defect.util import zip_matching_length
+from defect.util.array import smash_equal
+from defect.util.fit import *
+from defect import analysis
 
 # TODO:  Make this file stop existing (aside from its ghost that
 #         will forever haunt the commit history)
@@ -142,7 +142,7 @@ def fig_break0(figname, step):
 	es = [undirected_edge_set(g) for g in gs]
 
 	# difference in currents
-	import circuit
+	from defect import circuit
 	ecurrents = [circuit.compute_circuit_currents(g) for g in gs]
 
 	# leave out battery before drawing
