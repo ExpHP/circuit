@@ -1,5 +1,7 @@
 
-# cXorBasis.pyx: Cython bindings for xorbasis.hpp
+# _defect.pyx: Cython bindings for the kitchen sink
+
+# I wanted this stuff to be available under the package heirarchy '
 
 # This provides a C++ implementation of the XorBasisBuilder class, which manages an RREF bit
 #   matrix for the purposes of building e.g. a cycle basis.

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -16,18 +17,15 @@ import json
 import toml
 
 from multiprocessing import Pool
-from util import multiprocessing_dill, TempfileWrapper
+from defect.util import multiprocessing_dill, TempfileWrapper
 
-from circuit import MeshCurrentSolver, CircuitBuilder, load_circuit
-import graph.cyclebasis.planar
+from defect.circuit import MeshCurrentSolver, CircuitBuilder, load_circuit
+from defect import graph
+import defect.graph.path as vpath
 
-from components import node_selection
-from components import node_deletion
-from components import cyclebasis_provider
+from defect.components import node_selection, node_deletion, cyclebasis_provider
 
-import graph.path as vpath
-
-import util
+from defect import util
 
 # TODO: maybe implement subparsers for these, and put in the node_selection/deletion
 #   modules since these need to be updated for each new mode

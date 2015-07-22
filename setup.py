@@ -12,8 +12,9 @@ if sys.version_info[0] < 3:
 	sys.exit(1)
 
 import subprocess
-from distutils.core import setup
-from distutils.extension import Extension
+from setuptools import setup
+from setuptools import find_packages
+from setuptools import Extension
 from Cython.Build import cythonize
 
 #==========================================================================
@@ -34,14 +35,15 @@ if "cleanall" in sys.argv:
 
 #==========================================================================
 
-
 extensions = [
 	Extension(
 		language='c++',
-		name='defect.ext.cXorBasis',
+#		name='defect.ext.cXorBasis',  # <--- wanted this, but I'm having trouble getting it to work
+		name='_defect',  # <--- yuck
 		undef_macros=['NDEBUG'],
 		sources=[
-			'defect/ext/cXorBasis.pyx', # or '.cpp' if not using cythonize
+			'_defect.pyx',
+#			'defect/ext/cXorBasis.pyx',
 			'defect/ext/xorbasis.cpp',
 		],
 		include_dirs=['.'],
@@ -64,6 +66,12 @@ setup(
 	author = 'Michael Lamparski',
 	author_email = 'lampam@rpi.edu',
 
+	entry_points={
+		'console_scripts':[
+			'defect-trial = defect.resistances:main',
+		],
+	},
+
 	ext_modules = extensions,
-	packages = ['defect'],
+	packages=find_packages(), # include sub-packages
 )

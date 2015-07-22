@@ -6,7 +6,8 @@
 #	import graph.cyclebasis.cXorBasis as xorbasis
 #except ImportError:
 #	import graph.cyclebasis.pyXorBasis as xorbasis
-import defect.ext.cXorBasis as xorbasis
+
+from _defect import XorBasisBuilder # c++ version
 
 import graph.path as vpath
 
@@ -20,7 +21,7 @@ class CycleBasisBuilder:
 	def __init__(self):
 		self.edge_mapper = EdgeIndexMapper()
 		self.cycles_by_id = {}
-		self.basis = xorbasis.XorBasisBuilder()
+		self.basis = XorBasisBuilder()
 
 	@property
 	def cycles(self):
