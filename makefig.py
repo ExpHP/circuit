@@ -17,22 +17,28 @@ from util.array import smash_equal
 from util.fit import *
 import analysis
 
+# TODO:  Make this file stop existing (aside from its ghost that
+#         will forever haunt the commit history)
+
 def main():
 	parser = ArgumentParser('Plot data')
 	parser.add_argument('input', nargs='+', help='.json output file from resistances.py')
 
+	'''
 	args = parser.parse_args(sys.argv[1:])
 
 	infos = __main__get_infos(args.input)
 	metas = __main__get_metadata(args.input, infos)
+	'''
 
-	fig_linear('fig-linear', infos, metas)
-	fig_loglog('fig-loglog', infos, metas)
-	fig_break('fig-break')
+#	fig_linear('fig-linear', infos, metas, xscale=100.)
+#	fig_loglog('fig-loglog', infos, metas, xscale=100.)
+#	fig_biglinear('fig-biglinear', infos, metas, xscale=1.)
+	#fig_break('fig-break')
 
-	create_pdfs()
-	create_pngs()
-	#plt.show()
+#	create_pdfs()
+#	create_pngs()
+#	plt.show()
 
 def __main__get_infos(paths):
 	infos = []
@@ -70,7 +76,7 @@ def __main__get_metadata(paths, infos):
 			'final-10.json':   'R × 10',
 			'final-100.json':  'R × 100',
 			'final-1000.json': 'R × 1000',
-			'final-remove-ext.json': 'Delete',
+			'final-remove-ext.json': 'Remove',
 		}[name]
 
 		result.append(Metadata(name=name, color=colors[i % len(colors)]))
@@ -79,65 +85,20 @@ def __main__get_metadata(paths, infos):
 
 #----------------
 
-def fig_linear(figname, infos, metas):
-	fig = make_figure(figname)
-	ax = fig.add_subplot(111)
-
-	scale      = 'linear'    # matplotlib scale; 'log' or 'linear'
-	resistance = True
-	percent    = True
-	xlim       = (0.0, 0.05)
-	xydata = get_xydata(infos, xlim=xlim, resistance=resistance, percent=percent)
-	setup_axis(ax, xlim=xlim, scale=scale, resistance=resistance, percent=percent)
-
-	for (x, ys, yavg), meta in zip(xydata, metas):
-#		ax.scatter(x, yavg, edgecolors=meta.color, facecolors=meta.color, s=20)
-#		ax.plot(x, yavg, 'o', c=meta.color, ms=4, label=meta.name)
-#		ax.plot(x, yavg, '-+', c=meta.color, lw=2, ms=10, label=meta.name)
-		ax.plot(x, yavg, '-', c=meta.color, lw=2, ms=10, label=meta.name)
-
-	'''
-	for (x, ys, yavg), meta in zip(xydata, metas):
-		fit = LinearModel.from_data(x, yavg)
-		px = scale_space(scale, xlim[0], xlim[1], 150)
-		ax.plot(px, fit(px), ':', c='k')
-	'''
-
-	ax.legend(loc='upper left')
-	fig.tight_layout()
-
-#----------------
-
-def fig_loglog(figname, infos, metas):
-	fig = make_figure(figname)
-	ax = fig.add_subplot(111)
-
-	N = analysis.trial_max_defects_possible(infos[0]['trials'][0])
-	scale      = 'log'    # matplotlib scale; 'log' or 'linear'
-	resistance = True
-	percent    = True
-	xlim       = (10./N, 0.55)
-	xydata = get_xydata(infos, xlim=xlim, resistance=resistance, percent=percent)
-	setup_axis(ax, xlim=xlim, scale=scale, resistance=resistance, percent=percent)
-
-	for (x, ys, yavg), meta in zip(xydata, metas):
-		print(min(x),max(x),min(yavg),max(yavg))
-		ax.plot(x, yavg, c=meta.color, lw=3, label=meta.name)
-
+def do_power_law_fits(xydata, metas, ax, xlim):
 	ylim = ax.get_ylim()
-	print(ylim)
 	for (x, ys, yavg), meta in zip(xydata, metas):
-		fit = PowerLawModel.from_data(x[-200:], yavg[-200:])
+		fit = PowerLawModel.from_data(x[-200:]*100, yavg[-200:])
 		px = scale_space(scale, xlim[0], xlim[1], 150)
 		ax.plot(px, fit(px), ':', c='k')
 		print(meta.name, '--', '{:.5f}'.format(fit))
 	ax.set_xlim(xlim)
 	ax.set_ylim(ylim)
 
-	ax.legend(loc='upper left')
-	fig.tight_layout()
-
 #----------------
+
+# TODO this plot needs a replacement in the data repo before I can get
+#   rid of this file
 
 # everything in these functions are extremely dependent on a specific
 #  output file
@@ -259,12 +220,13 @@ def x_is_defect_count(ax):
 	ax.set_xlabel('Defect count')
 
 def x_is_defect_ratio(ax):
-	ax.set_xlabel('Defect ratio')
+	ax.set_xlabel('Defect %')
 
 #----------------
 
 # this function does far too many things...
 def xy_data_from_file(fileinfo, *, resistance=True, ignore_zero=True, percent=True, cutoff=0.0):
+
 	assert isinstance(resistance, bool)
 	assert isinstance(ignore_zero, bool)
 	assert isinstance(cutoff, float)
@@ -406,6 +368,7 @@ FIGURES = []
 def make_figure(basename):
 	global FIGURES
 	fig = plt.figure(figsize=(5,4))
+#	fig = plt.figure(figsize=(2.25,2))
 	FIGURES.append((basename, fig.number))
 	return fig
 
