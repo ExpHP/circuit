@@ -17,24 +17,6 @@ from setuptools import find_packages
 from setuptools import Extension
 from Cython.Build import cythonize
 
-#==========================================================================
-
-def shell(s, echo=True):
-	if echo:
-		print(s)
-	subprocess.Popen(s, shell=True, executable='/bin/bash')
-
-# (a reprehensible hack; is there no way to add a "rule" to setup?)
-if "cleanall" in sys.argv:
-	print("Deleting cython files...")
-	shell("rm -f defect/ext/*.c")
-	shell("rm -f detect/ext/*.so")
-
-	# Now do a normal clean
-	sys.argv[sys.argv.index('cleanall')] = 'clean'
-
-#==========================================================================
-
 extensions = [
 	Extension(
 		language='c++',
@@ -56,8 +38,6 @@ extensions = [
 ]
 extensions = cythonize(extensions)
 
-#note: flags prior to setup.py were CPPFLAGS="-Wall --pedantic -O2 --std=c++11 -fPIC -I/usr/include/python3.4 -DNDEBUG"
-
 setup(
 	name='Defect',
 	version = '0.0',
@@ -72,6 +52,14 @@ setup(
 			'defect-gen = defect.scripts.circuitgen.any:main',
 		],
 	},
+
+	install_requires=[
+		'networkx',
+		'numpy',
+		'scipy',
+		'pytoml',
+		'dill',
+	],
 
 	ext_modules = extensions,
 	packages=find_packages(), # include sub-packages
