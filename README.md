@@ -1,4 +1,4 @@
-# `circuit`
+# `defect`
 
 Models an atomic network as a circuit.
 It computes currents along such networks, and can introduce "defects" into these networks
