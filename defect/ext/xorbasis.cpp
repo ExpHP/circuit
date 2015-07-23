@@ -550,6 +550,8 @@ std::pair<bool, identity_t> _XorBasisBuilder::add_if_linearly_independent(Row ro
 
 void _XorBasisBuilder::remove_ids(Aug ids)
 {
+	// Use the augmented matrix to identify rows that "contain" these rows, and
+	//  cancel them out (as though the rows were never inserted to begin with!)
 	// Brute force method
 	for (auto id: ids) {
 		const Row & removed_row = originals[id];
