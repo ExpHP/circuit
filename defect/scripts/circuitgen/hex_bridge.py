@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import sys
 import math
@@ -6,10 +7,10 @@ import argparse
 import numpy as np
 import networkx as nx
 
-import resistances
-from circuit import save_circuit
-from util import zip_dict
-import filetypes.internal as fileio
+import defect.resistances
+from defect.circuit import save_circuit
+from defect.util import zip_dict
+import defect.filetypes.internal as fileio
 
 # (these top two should be flipped x/y)
 # Column numbers: (zigzag dimension)
@@ -43,14 +44,14 @@ import filetypes.internal as fileio
 
 # FIXME: this whole file is a mess
 
-def main(argv):
-	parser = argparse.ArgumentParser()
+def main(prog, argv):
+	parser = argparse.ArgumentParser(prog=prog)
 	parser.add_argument('rows', metavar='LENGTH', type=int)
 	parser.add_argument('cols', metavar='WIDTH', type=int)
 	parser.add_argument('--output', '-o', type=str, required=True, help='.circuit output file')
 	parser.add_argument('--cb', action='store_true', help='generate .cycles')
 
-	args = parser.parse_args(argv[1:])
+	args = parser.parse_args(argv)
 
 	values = make_circuit(args.rows, args.cols)
 	save_output(args.output, args.cb, *values)
@@ -117,13 +118,13 @@ def save_output(path, do_cb, g, xs, ys, measure_edge):
 	pos = zip_dict(xs, ys)
 	fileio.gpos.write_gpos(pos, gpos_path)
 
-	config = resistances.Config()
+	config = defect.resistances.Config()
 	config.set_measured_edge(*measure_edge)
 	config.set_no_defect([])
 	config.save(basename + '.defect.toml')
 
 	if do_cb:
-		from graph.cyclebasis.planar import planar_cycle_basis_nx
+		from defect.graph.cyclebasis.planar import planar_cycle_basis_nx
 		cycles = planar_cycle_basis_nx(g, xs, ys)
 		fileio.cycles.write_cycles(cycles, basename + '.cycles')
 
@@ -179,7 +180,7 @@ def hex_bridge_grid_circuit(gridvs):
 
 # FIXME HACK
 # Should use CircuitBuilder and save_circuit instead
-from circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
+from defect.circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
 
 def add_wire(g, s, t):
 	g.add_edge(s, t)
@@ -203,4 +204,5 @@ def drop_extension(path):
 	return os.path.join(head, tail)
 
 if __name__ == '__main__':
-	main(list(sys.argv))
+	prog, *argv = sys.argv
+	main(prog, argv)

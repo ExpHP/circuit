@@ -69,6 +69,7 @@ setup(
 	entry_points={
 		'console_scripts':[
 			'defect-trial = defect.resistances:main',
+			'defect-gen = defect.scripts.circuitgen.any:main',
 		],
 	},
 

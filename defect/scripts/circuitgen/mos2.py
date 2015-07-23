@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import sys
 import math
@@ -8,22 +9,22 @@ import itertools
 import numpy as np
 import networkx as nx
 
-import graph.path as vpath
-from buildcb import build_cyclebasis_terminal
+import defect.graph.path as vpath
+from defect.buildcb import build_cyclebasis_terminal
 
-import resistances
-import filetypes.internal as fileio
-from circuit import save_circuit
+import defect.resistances
+import defect.filetypes.internal as fileio
+from defect.circuit import save_circuit
 
-def main(argv):
-	parser = argparse.ArgumentParser()
+def main(prog, argv):
+	parser = argparse.ArgumentParser(prog=prog)
 	parser.add_argument('rows', metavar='LENGTH', type=int)
 	parser.add_argument('cols', metavar='WIDTH', type=int)
 	parser.add_argument('--verbose', '-v', action='store_true')
 	parser.add_argument('--output-cb', '-C', metavar='PATH', type=str, help='generate .cyclebasis file')
 	parser.add_argument('--output', '-o', type=str, required=True, help='.gpickle output file')
 
-	args = parser.parse_args(argv[1:])
+	args = parser.parse_args(argv)
 
 	cellrows, cellcols = args.rows, args.cols
 
@@ -73,7 +74,7 @@ def save_output(path, g, xys, measure_edge):
 	# note we do not produce '.planar.gpos' because this is not planar!
 	fileio.gpos.write_gpos(xys, basename + '.display.gpos')
 
-	config = resistances.Config()
+	config = defect.resistances.Config()
 	config.set_measured_edge(*measure_edge)
 	config.set_no_defect([])
 	config.save(basename + '.defect.toml')
@@ -163,7 +164,7 @@ def add_connector_edges(g, cellrows, cellcols):
 
 # FIXME HACK
 # Should use CircuitBuilder and save_circuit instead
-from circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
+from defect.circuit import EATTR_RESISTANCE, EATTR_VOLTAGE, EATTR_SOURCE
 
 def add_wire(g, s, t):
 	g.add_edge(s, t)
@@ -374,4 +375,5 @@ def drop_extension(path):
 	return os.path.join(head, tail)
 
 if __name__ == '__main__':
-	main(list(sys.argv))
+	prog, *argv = sys.argv
+	main(prog, argv)
