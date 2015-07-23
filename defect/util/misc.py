@@ -3,15 +3,42 @@ import itertools
 import tempfile
 import pickle
 
-# A scrolling 2-element window on an iterator
 def window2(it):
-	it = iter(it)
-	prev = next(it)
+	'''
+	Get (overlapping) adjacent pairs from an iterable.
+
+	>>> x = [1,2,3,10,7]
+	>>> derivative = [b-a for (a,b) in window2(x)]
+	>>> derivative
+	[1, 1, 7, -3]
+	>>> list(window2([1])) # no "pairs"
+	[]
+	>>> list(window2([]))  # likewise
+	[]
+	'''
+	it = iter(it) # allow next() to consume elements
+
+	try: prev = next(it)
+	except StopIteration:  # 0-length list
+		return
+
 	for x in it:
 		yield (prev,x)
 		prev = x
 
 def partition(pred, it):
+	'''
+	Splits an iterable into two based on a predicate.
+
+	Returns ``(ayes, nays)``.
+
+	>>> compare10 = lambda x: x>10
+	>>> greater, lesser = partition(compare10, [1,4,77,20,5])
+	>>> greater
+	[77, 20]
+	>>> lesser
+	[1, 4, 5]
+	'''
 	yes,no = [],[]
 	for x in it:
 		if pred(x): yes.append(x)
@@ -31,11 +58,25 @@ def zip_matching_length(*arrs):
 	'''
 	Variant of ``zip`` which raises an error on iterators of inconsistent length.
 
-	Raises ``ValueError`` if one of the input iterators produces a different number
-	of elements from the rest.
+	>>> list(zip_matching_length([1,2,3], [4,5,6]))
+	[(1, 4), (2, 5), (3, 6)]
+	>>> list(zip_matching_length([1,2,3], [4,5]))
+	Traceback (most recent call last):
+	  ...
+	ValueError: zip_matching_length called on iterables of mismatched length
+	>>> # edge cases
+	>>> list(zip_matching_length([],[],[]))
+	[]
+	>>> list(zip_matching_length())
+	[]
 	'''
 	sentinel = object()
 	zipped = list(map(tuple, itertools.zip_longest(*arrs, fillvalue=sentinel)))
+
+	# all arrays were length 0
+	if len(zipped) == 0:
+		return []
+
 	if sentinel in zipped[-1]:
 		raise ValueError('zip_matching_length called on iterables of mismatched length')
 	return zipped
@@ -46,6 +87,11 @@ def zip_variadic(*its):
 
 	Rather than stopping with the shortest iterable, this will produce tuples of variable
 	length, with one element for each iterable that has not yet finished.
+
+	>>> list(zip_variadic([1,2,3,4], [11,22], [111,222,333]))
+	[(1, 11, 111), (2, 22, 222), (3, 333), (4,)]
+	>>> list(zip_variadic())
+	[]
 	'''
 	sentinel = object()
 	def without_fill(xs):
@@ -54,41 +100,20 @@ def zip_variadic(*its):
 
 
 def edictget(d, e):
+	'''
+	Index a dict which takes undirected graph edges as keys.
+
+	The dict is assumed to only store 1 value for each edge. (behavior is undefined on a dict
+	which has different values for e.g. `(1,2)` and `(2,1)`).
+
+	>>> d = {(1,4):'a'}
+	>>> edictget(d, (1,4))
+	'a'
+	>>> edictget(d, (4,1))
+	'a'
+	'''
 	return d[e[::-1] if e[::-1] in d else e]
 
-
-class TempPickle:
-	'''
-	An object pickled to a temporary file.
-
-	This exists to aid the creation of worker threads (via e.g. ``multiprocessing.Pool.map``)
-	that take a large object.  Instead of passing the object directly to workers, create a
-	``TempPickle`` from it and pass the filename (accessible via the ``.path`` attribute)
-	to the workers. Workers should call the static method ``TempPickle.read(path)`` to
-	obtain the object.
-
-	The actual file on disk will be deleted once no references to the TempPickle exist,
-	allowing for proper cleanup regardless of exceptions.  However, this makes TempPickle
-	ill-suited for asynchronous communication between concurrently running processes.
-
-	PORTABILITY CONCERNS:  Works fine on Unix, but may unusable on e.g. Windows due to
-	the fact that TempPickle keeps an open file handle on the object.
-	'''
-	def __init__(self, obj):
-		self.__temp = tempfile.NamedTemporaryFile('wb')
-		pickle.dump(obj, self.__temp, pickle.HIGHEST_PROTOCOL)
-		self.__temp.flush()
-		# do NOT close __temp, as doing so will delete the file early
-
-	@property
-	def path(self):
-		''' File path to the pickled object. '''
-		return self.__temp.name
-
-	@staticmethod
-	def read(path):
-		''' Obtain an object from the path. '''
-		return pickle.load(path)
 
 class TempfileWrapper:
 	'''
@@ -167,17 +192,32 @@ def dict_inverse(d):
 # takes a dict `d` whose values are iterable (and of equal length N) and returns
 #  dicts d1,d2,...,dN such that dn[k] == d[k][n]
 def unzip_dict(d):
+	''' Turn a dict with iterable values into a tuple of dicts.
+
+	The values are required to be of equal length.
+
+	>>> roman, caps = unzip_dict({'a':('I','A'), 'b':('II','B')})
+	>>> roman == {'a':'I', 'b':'II'}
+	True
+	>>> caps == {'a':'A', 'b':'B'}
+	True
+	>>> unzip_dict({'a':['a1','a2'], 'b':['b1']}) # lengths must match
+	Traceback (most recent call last):
+	  ...
+	ValueError: zip_matching_length called on iterables of mismatched length
+	'''
 	zipped = zip_matching_length(*d.values())
-	return [{k:v for k,v in zip(d.keys(), x)} for x in zipped]
+	return tuple({k:v for k,v in zip(d.keys(), x)} for x in zipped)
 
-_d1,_d2 = unzip_dict({'a':(1,2),'b':(3,4)})
-assert _d1 == {'a': 1, 'b': 3}
-assert _d2 == {'a': 2, 'b': 4}
-assertRaises(ValueError, unzip_dict, {'a':(1,2),'b':(3,)})
-
-# takes dicts d1,d2,...,dN with matching keys and returns a dict `d`
-#  of tuples   d[k] == (d1[k], d2[k], ... dN[k])
 def zip_dict(*ds):
+	'''
+	Combine dicts with matching keys into a single dict with tuple values.
+
+	>>> roman = {'a':'I', 'b':'II'}
+	>>> caps = {'a':'A', 'b':'B'}
+	>>> zip_dict(roman, caps) == {'a':('I','A'), 'b':('II','B')}
+	True
+	'''
 	if len(ds) == 0: return {}
 
 	keys = set(ds[0]) # used to synchronize order of lists
@@ -189,8 +229,6 @@ def zip_dict(*ds):
 
 	zipped = zip_matching_length(*values)
 	return {k:tuple(x) for k,x in zip(keys, zipped)}
-
-assert zip_dict({'a': 1}, {'a': 2}) == {'a': (1,2)}
 
 if __name__ == '__main__':
 	import doctest
