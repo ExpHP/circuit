@@ -31,8 +31,5 @@ Or if you prefer using Pip to install python modules, try `pip3 install`.
 
 # Testing
 
-Ahh, you want to make sure everything works as intended?  Good for you!  So do I!...eh heh... um...
-so yeah, unfortuntely, it's taking me quite a while to decide how I should set up my tests.
-(I mean, I am kind of _the most brutally indecisive person ever_)
+There are currently some doctests (which you can mass-invoke via `nosetests --with-doctest`), and in some places there are actually unit tests sprinkled around somewhat haphazardly at the module level (so that they run automatically when the library is loaded).  Generally speaking, though, the test coverage needs improvement.
 
-There are currently a couple of doctests (which you can mass-invoke via `nosetests --with-doctest`) and some unit tests placed haphazardly at the module level (so that they get run on import (!!!)), but the test coverage is far from comprehensive and is something I want to work on.

@@ -41,24 +41,64 @@ def _sign_from_source_vertex(endpoints, source):
 	if source == t: return -1.0
 	raise ValueError('source not in endpoints')
 
-# For producing hardcoded circuits.
+# For generating circuits.
 class CircuitBuilder():
+	'''
+	Create a ``circuit``.
+
+	There isn't really a ``circuit`` type, so ``CircuitBuilder`` provides the
+	protocol for making one.  The result will be a ``networkx`` ``Graph`` with
+	certain attributes set.
+
+	>>> builder = CircuitBuilder()
+	>>> builder.make_resistor('a', 'b', 1.0)
+	>>> circuit = builder.build()
+	>>> circuit.number_of_nodes()
+	2
+	'''
+	# Fun fact: This module used to have a "Circuit" class.  I got rid of it because
+	#   I was wasting too much time worrying about its API.
+
 	_DEFAULT_VOLTAGE    = 0.0
 	_DEFAULT_RESISTANCE = 0.0
 
-	def __init__(self, g):
+	def __init__(self, g=None):
+		if g is None:
+			g = nx.Graph()
 		self._g = _copy_graph_without_attributes(g)
 
-	# adds an edge or turns an existing edge into a battery (has a potential
-	#  difference of +voltage from s to t, and 0 resistance)
+	# class invariant:  Any edge on `self._g` which defines at least one edge property
+	#                   (source, voltage, resistance) will define all three.
+	# (however, an edge may have NO properties)
+
+	def add_node(self, s):
+		self._g.add_node(s)
+
 	def make_battery(self, s, t, voltage):
+		'''
+		Create or turn the existing edge `(s,t)` into a voltage source.
+
+		The edge will have zero resistance.
+		The order of ``s`` and ``t`` are significant; ``voltage`` is interpreted
+		as ``Vt - Vs``, where ``(Vs,Vt)`` are the potential at ``s`` and ``t``.
+		'''
 		self.make_component(s, t, voltage=voltage)
 
 	def make_resistor(self, s, t, resistance):
+		'''
+		Create or turn the existing edge `(s,t)` into a resistor.
+
+		The edge will have zero voltage.
+		'''
 		self.make_component(s, t, resistance=resistance)
 
-	# makes any sort of circuit component
 	def make_component(self, s, t, *, resistance=0.0, voltage=0.0):
+		'''
+		Create or turn the existing edge `(s,t)` into an arbitrary component.
+
+		The order of ``s`` and ``t`` are significant; ``voltage`` is interpreted
+		as ``Vt - Vs``, where ``(Vs,Vt)`` are the potential at ``s`` and ``t``.
+		'''
 		g = self._g
 		if not g.has_edge(s,t):
 			g.add_edge(s,t)
@@ -67,13 +107,19 @@ class CircuitBuilder():
 		g.edge[s][t]['_source']     = s
 
 	def build(self):
+		'''
+		Produce a ``circuit``.
+		'''
 		g = self._g
 		voltage    = nx.get_edge_attributes(g, '_voltage')
 		resistance = nx.get_edge_attributes(g, '_resistance')
 		sources    = nx.get_edge_attributes(g, '_source')
 
+		# class invariant of CircuitBuilder; no attribute ever appears without the other two
 		assert set(voltage) == set(resistance) == set(sources)
 
+		# this covers edges present in the initial graph (passed into the constructor)
+		# which were not addressed via make_resistor and friends
 		missing_edges = [e for e in g.edges() if (e not in voltage) and (e[::-1] not in voltage)]
 		for e in missing_edges:
 			voltage[e]     = self._DEFAULT_VOLTAGE
@@ -87,10 +133,13 @@ class CircuitBuilder():
 		assert validate_circuit(copy)
 		return copy
 
-# Function which more or less defines a `circuit`, as I'd rather not make a class.
-# returns True or throws an exception (the True return value is to permit its use
-#  in an assert statement)
 def validate_circuit(circuit):
+	'''
+	Checks that the input ``networkx`` Graph meets all the criteria of a ``circuit``.
+
+	This exists because there is no actual ``circuit`` class.  Think of this as "checking
+	the class invariants."
+	'''
 	# Check graph type...
 	if circuit.is_directed() or circuit.is_multigraph():
 		raise ValueError('Circuit must be an undirected non-multigraph (nx.Graph())')
@@ -112,10 +161,16 @@ def validate_circuit(circuit):
 	return True
 
 def save_circuit(circuit, path):
+	'''
+	Write a circuit to a file.
+	'''
 	g = map_edge_attributes(circuit, INTERNAL_TO_SAVED_EATTR)
 	fileio.graph.write_networkx(g, path)
 
 def load_circuit(path):
+	'''
+	Read a circuit from a file.
+	'''
 	# FIXME remove this later
 	if path.endswith('.gpickle'): # old format
 		return nx.read_gpickle(path)
@@ -125,11 +180,34 @@ def load_circuit(path):
 		return circuit
 
 def circuit_edge_sign(circuit, s, t):
+	'''
+	Get the sign of a directed edge, relative to voltage.
+
+	Each edge in a circuit has a fixed "source" vertex which is used
+	to define the sign of its voltage.  This returns `+1.0` if `s`
+	and `t` are in the correct order, and `-1.0` if they are reversed.
+	'''
 	positive_source = circuit.edge[s][t][EATTR_SOURCE]
 	assert positive_source in (s,t)
 	return +1.0 if s == positive_source else -1.0
 
 def circuit_path_voltage(circuit, path):
+	'''
+	Get the total EMF produced by voltage sources along a path.
+
+	The path voltage around a cycle may be nonzero, as it only takes fixed
+	voltage sources into account (it does not account for potential
+	differences caused by resistance).
+
+	>>> import networkx as nx
+	>>> builder = CircuitBuilder(nx.cycle_graph(5))
+	>>> builder.add_battery(2, 3, 6.0)
+	>>> circuit = builder.build()
+	>>> circuit_path_voltage([1, 2, 3, 4])
+	6.0
+	>>> circuit_path_voltage([4, 3, 2, 1])
+	-6.0
+	'''
 	acc = 0.0
 	for s,t in vpath.edges(path):
 		acc += circuit_edge_sign(circuit,s,t) * circuit.edge[s][t][EATTR_VOLTAGE]
@@ -150,19 +228,9 @@ def copy_without_attributes(g):
 
 #------------------------------------------------------------
 
-def sane_equals(a, b):
-	''' An alternative to ``==`` which pounds numpy into freaking submission die die die '''
-	if isinstance(a, np.ndarray) != isinstance(b, np.ndarray):
-		return False
-	elif isinstance(a, np.ndarray):
-		return (a == b).all() # numpy: polymorphism wats that
-	else:
-		return a == b
-
-#------------------------------------------------------------
-
 class cached_property:
-	''' A member function decorator which provides a clean way to defer computation.
+	'''
+	A member function decorator which provides a clean way to defer computation.
 
 	A property-like object which is automatically backed by a member.
 	A value may be assigned to it via ``=`` (like a property) or by explicitly calling
@@ -170,29 +238,28 @@ class cached_property:
 	 value has been stored, it will call the decorated function to compute a new value,
 	 storing and returning it.
 
-	Invoking ``invalidate()`` will reset the member (making it as though no value has
-	 been set).  This allows one to arbitrarily defer an expensive computation by invoking
-	 ``invalidate()`` now and only invoking ``get()`` once the value is needed (which will
-	 then perform the computation).
-
 	Example:
 
 	>>> class Foo:
 	...   @cached_property
 	...   def x(self):
 	...     print('computing!!!')
-	...     return 10
+	...     return 10  # return value gets stored
 	...
 	>>> foo = Foo()
-	>>> foo.x.get()        # prints 'computing!!!', => 10
-	>>> foo.x.get()        # => 10
-	>>>
-	>>> foo.x = 3
-	>>> foo.x.put(3)       # also valid
-	>>> foo.x.get()        # => 3
-	>>>
-	>>> foo.x.invalidate()
-	>>> foo.x.get()        # prints 'computing!!!', => 10
+	>>> foo.x.get()
+	computing!!!
+	10
+	>>> foo.x.get()
+	10
+	>>> foo.x.put(3)
+	>>> foo.x = 3    # sugared form of put()
+	>>> foo.x.get()
+	3
+	>>> foo.x.invalidate()  # force recomputation
+	>>> foo.x.get()
+	computing!!!
+	10
 	'''
 	def __init__(self, func):
 		self.member   = self.__generate_member_name()
@@ -210,17 +277,36 @@ class cached_property:
 		return '_cached__{}'.format(id(self))
 
 	def get(self, obj):
+		'''
+		Obtain the cached value (or compute a new one).
+
+		If a value was previously computed with ``get()`` (or stored via
+		``put()``), it will be returned.  Otherwise, the decorated member
+		function will be invoked to compute a new value.
+		'''
 		if getattr(obj, self.member, self.sentinel) is self.sentinel:
 			setattr(obj, self.member, self.func(obj))
 		assert getattr(obj, self.member) is not self.sentinel
 		return getattr(obj, self.member)
 
 	def put(self, obj, value):
+		'''
+		Store a value directly to the cache.
+
+		This is useful for providing optimized routines which can update a member
+		without having to recompute it from scratch.  Rather than calling ``invalidate()``,
+		``get()`` the value, perform the necessary transformations, and place it back
+		with ``put()``.
+		'''
 		setattr(obj, self.member, value)
 
 	def invalidate(self, obj):
+		'''
+		Delete the cached value, causing it to be recomputed on the next ``get()``.
+		'''
 		setattr(obj, self.member, self.sentinel)
 
+# a cached_property bound to an instance
 class bound_cached_property:
 	__doc__ = cached_property.__doc__
 
