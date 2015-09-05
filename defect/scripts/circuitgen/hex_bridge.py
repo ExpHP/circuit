@@ -49,15 +49,16 @@ def main(prog, argv):
 	parser.add_argument('rows', metavar='LENGTH', type=int)
 	parser.add_argument('cols', metavar='WIDTH', type=int)
 	parser.add_argument('--output', '-o', type=str, required=True, help='.circuit output file')
+	parser.add_argument('--alternate', action='store_true', help='forbid defects on one of the atoms in the primitive unit cell')
 	parser.add_argument('--cb', action='store_true', help='generate .cycles')
 
 	args = parser.parse_args(argv)
 
-	values = make_circuit(args.rows, args.cols)
+	values = make_circuit(args.rows, args.cols, args.alternate)
 	save_output(args.output, args.cb, *values)
 
 
-def make_circuit(cellrows, cellcols):
+def make_circuit(cellrows, cellcols, alternate):
 	nrows,ncols = hex_grid_dims(cellrows,cellcols)
 
 	# Grid nodes
@@ -102,10 +103,16 @@ def make_circuit(cellrows, cellcols):
 	for v in gridvs[-1][topstart::2]:
 		add_wire(g,v,topv)
 
-	measure_edge = (botv, topv)
-	return g, xs, ys, measure_edge
+	# alternating mode
+	if alternate:
+		no_defect = list(checkerboard_iter(gridvs))
+	else:
+		no_defect = []
 
-def save_output(path, do_cb, g, xs, ys, measure_edge):
+	measure_edge = (botv, topv)
+	return g, xs, ys, measure_edge, no_defect
+
+def save_output(path, do_cb, g, xs, ys, measure_edge, no_defect):
 	save_circuit(g, path)
 
 	basename = drop_extension(path)
@@ -120,7 +127,7 @@ def save_output(path, do_cb, g, xs, ys, measure_edge):
 
 	config = defect.resistances.Config()
 	config.set_measured_edge(*measure_edge)
-	config.set_no_defect([])
+	config.set_no_defect(no_defect)
 	config.save(basename + '.defect.toml')
 
 	if do_cb:
@@ -156,6 +163,15 @@ def grid_label(row,col):
 def flat_iter(lst):
 	for item in lst:
 		yield from item
+
+# an iterator over a (singly-)nested iterable which selects every other element
+#  in a checkerboard fashion
+def checkerboard_iter(lst, offset=0):
+	lst = list(map(list, lst))
+	offset %= 2
+	for i, row in enumerate(lst):
+		jstart = (offset+i)%2
+		yield from row[jstart::2]
 
 def hex_bridge_grid_circuit(gridvs):
 	g = nx.Graph()

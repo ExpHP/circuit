@@ -232,14 +232,15 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 	selector = selection_mode.selector(g)
 	deletion_func = deletion_mode.deletion_func
 
-	trial_info = {
-		'graph': graph_info(g),
-		'steps': {'runtime':[], 'current':[], 'deleted':[]},
-	}
-
 	is_deletable = lambda v: (v not in no_defect) and (v not in measured_edge)
 	choices = [v for v in g if is_deletable(v)]
 	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), cbupdater=cbprovider.cbupdater())
+
+	trial_info = {
+		'graph': graph_info(g),
+		'num_deletable': len(choices),
+		'steps': {'runtime':[], 'current':[], 'deleted':[]},
+	}
 
 	def no_defects_possible():
 		return len(choices) == 0 or selector.is_done()
