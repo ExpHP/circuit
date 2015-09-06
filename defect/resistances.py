@@ -42,14 +42,21 @@ DELETION_MODES = {
 def main():
 	import argparse
 	parser = argparse.ArgumentParser()
+
+	# some "type" callbacks for simple validations.
+	# Do not use this to test conditions based on factors external to the program
+	#  (such as path being writable), because these won't get called on default values!
+	nonnegative_int = validating_conversion(int, lambda x: x>0, 'is not a nonnegative integer')
+	positive_int = validating_conversion(int, lambda x: x>1, 'is not a positive integer')
+
 	parser.add_argument('input', type=str, help='.gpickle file of networkx graph')
 	parser.add_argument('--verbose', '-v', action='store_true')
-	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
-	parser.add_argument('--trials', '-t', type=int, default=1, help='number of trials to do total')
-	parser.add_argument('--steps', '-s', type=int, default=None, help='number of steps per trial')
+	parser.add_argument('--jobs', '-j', type=positive_int, default=1, help='number of trials to run in parallel')
+	parser.add_argument('--trials', '-t', type=positive_int, default=1, help='number of trials to do total')
+	parser.add_argument('--steps', '-s', type=nonnegative_int, default=None, help='number of steps per trial')
 	parser.add_argument('--config', '-c', type=str, default=None, help='Path to defect trial config TOML. '
 		'Default is derived from circuit (BASENAME.defect.toml)')
-	parser.add_argument('--substeps', '-x', type=int, default=1, help='number of defects added per step')
+	parser.add_argument('--substeps', '-x', type=positive_int, default=1, help='number of defects added per step')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file. Default is derived '
 		'from circuit (BASENAME.results.json).')
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
@@ -66,16 +73,8 @@ def main():
 	args = parser.parse_args(sys.argv[1:])
 
 	if (args.output_pstats is not None) and args.jobs != 1:
-		print('error: --output-pstats/-P is limited to --jobs 1',file=sys.stderr)
-		print('In other words: No multiprocess profiling!',file=sys.stderr)
-		sys.exit(1)
-
-	if (args.steps is not None) and args.steps < 0:
-		print('--steps must be a non-negative integer.',file=sys.stderr)
-		sys.exit(1)
-	if args.substeps < 1:
-		print('--substeps must be a positive integer.',file=sys.stderr)
-		sys.exit(1)
+		die('--output-pstats/-P is limited to --jobs 1\n'
+			'In other words: No multiprocess profiling!')
 
 	# common behavior for filepaths which are optionally specified
 	basename = drop_extension(args.input)
@@ -84,7 +83,7 @@ def main():
 		if userpath is not None:
 			return userpath
 		if args.verbose:
-			print('Note: "{}" not specified!  Trying "{}"'.format(argname, autopath))
+			notice('Note: %s not specified!  Trying %r', argname, autopath)
 		return autopath
 
 	args.config = get_optional_path(args.config, '.defect.toml', '--config')
@@ -100,7 +99,7 @@ def main():
 	# save the user some grief; fail early if output paths are not writable
 	for path in (args.output_json, args.output_pstats):
 		if path is not None:
-			error_if_not_writable(path)
+			die_if_not_writable(path)
 
 	# The function that worker threads will invoke
 	cmd_once = functools.partial(run_trial_nx,
@@ -158,42 +157,38 @@ def cbprovider_from_args(basename, args):
 		(args.cyclebasis_planar, from_planar),
 	]:
 		if userpath is not None:
-			error_if_not_readable(userpath)
+			die_if_not_readable(userpath)
 			return constructor(userpath)
 
 	if args.verbose:
-		print('Note: "--cyclebasis-cycles" or "--cyclebasis-planar" not specified. Trying defaults...')
+		notice('Note: "--cyclebasis-cycles" or "--cyclebasis-planar" not specified. Trying defaults...')
 	for autopath, constructor in [
 		(basename + '.cycles',      from_cycles),
 		(basename + '.planar.gpos', from_planar),
 	]:
 		if os.path.exists(autopath):
 			if args.verbose:
-				print('->Found possible cyclebasis info at "{}"'.format(autopath))
-			error_if_not_readable(autopath)
+				notice('->Found possible cyclebasis info at %r', autopath)
+			die_if_not_readable(autopath)
 			return constructor(autopath)
-	print('Error: Cannot find cyclebasis info. You need a .cycles or .planar.gpos file. '
-	      'For more info search for "--cyclebasis" in the program help (-h).', file=sys.stderr)
+	die('Cannot find cyclebasis info. You need a .cycles or .planar.gpos file.\n'
+		'For more info search for "--cyclebasis" in the program help (-h).')
 	sys.exit(1)
 
-def error_if_not_readable(path):
+def die_if_not_readable(path):
 	try:
 		with open(path, 'r') as f:
 			pass
 	except IOError as e:
-		print("Error: Could not verify '{}' as readable:".format(path), file=sys.stderr)
-		print(str(e), file=sys.stderr)
-		sys.exit(1)
+		die("Could not verify %r as readable:\n%s", path, e)
 
 # NOTE unintentional side-effect: creates an empty file if nothing exists
-def error_if_not_writable(path):
+def die_if_not_writable(path):
 	try:
 		with open(path, 'a') as f:
 			pass
 	except IOError as e:
-		print("Error: Could not verify '{}' as writable:".format(path), file=sys.stderr)
-		print(str(e), file=sys.stderr)
-		sys.exit(1)
+		die("Could not verify %r as writable:\n%s", path, e)
 
 def run_sequential(f,*,times):
 	return [f() for _ in range(times)]
@@ -221,7 +216,7 @@ def wrap_with_profiling(pstatsfile, f):
 		try:
 			p.dump_stats(pstatsfile)
 		except IOError as e: # not worth losing our return value over
-			print('Warning: could not write pstats. ({})'.format(str(e)), file=sys.stderr)
+			warn('could not write pstats. (%s)', e)
 
 		return result
 	return wrapped
@@ -230,7 +225,7 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 	no_defect = set(no_defect)
 
 	if verbose:
-		print('Starting')
+		notice('Starting')
 
 	selector = selection_mode.selector(g)
 	deletion_func = deletion_mode.deletion_func
@@ -287,7 +282,7 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		step_info['deleted'].append(deleted)
 
 		if verbose:
-			print('step:', step, 'time:', runtime, 'current:', current)
+			notice('step: %s   time: %s   current: %s', step, runtime, current)
 
 	return trial_info
 
@@ -348,6 +343,30 @@ class Config:
 			},
 		}
 		return toml.dumps(d)
+
+def validating_conversion(basetype, pred, failmsg):
+	def func(s):
+		error = argparse.ArgumentTypeError(repr(s) + failmsg)
+		# this is only intended for simple validation on simple types;
+		# in such cases, little value is lost by substituting all exceptions
+		#  with one that just names the requirements
+		try: x = basetype(s)
+		except Exception: raise error
+		if not pred(x): raise error
+		return x
+	return func
+
+# think logger.info, except the name `info` already belonged to
+#  a local variable in some places
+def notice(msg, *args):
+	print(msg % args)
+
+def warn(msg, *args):
+	print('Warning: ' + (msg % args), file=sys.stderr)
+
+def die(msg, *args, code=1):
+	print('Fatal: ' + (msg % args), file=sys.stderr)
+	sys.exit(code)
 
 if __name__ == '__main__':
 	main()
