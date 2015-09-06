@@ -338,8 +338,6 @@ class bound_cached_property:
 #
 # The class itself contains NO logic for computation.
 #
-# TODO: Make g, cbupdater and the cached props private, because it is absolutely NOT OKAY for
-#       them to be mutated willy-nilly.
 class MeshCurrentSolver:
 	'''
 	Computes currents in a circuit via mesh current analysis.
@@ -354,55 +352,55 @@ class MeshCurrentSolver:
 
 		validate_circuit(circuit)
 
-		self.g = circuit.copy()
-		self.cbupdater = cbupdater
+		self.__g = circuit.copy()
+		self.__cbupdater = cbupdater
 
-		self.cbupdater.init(cyclebasis)
+		self.__cbupdater.init(cyclebasis)
 
 		# Invalidate everything
-		self.cyclebasis.invalidate()
-		self.cycles_from_edge.invalidate()
-		self.voltage_vector.invalidate()
-		self.resistance_matrix.invalidate()
-		self.cycle_currents.invalidate()
+		self.__cyclebasis.invalidate()
+		self.__cycles_from_edge.invalidate()
+		self.__voltage_vector.invalidate()
+		self.__resistance_matrix.invalidate()
+		self.__cycle_currents.invalidate()
 
 	def delete_node(self, v):
 		'''
 		Removes a vertex and all associated edges from the circuit.
 		'''
 		# update in-place
-		self.g.remove_node(v)
-		self.cbupdater.remove_vertex(self.g, v)
+		self.__g.remove_node(v)
+		self.__cbupdater.remove_vertex(self.__g, v)
 
-		self.cyclebasis.invalidate()
-		self.cycles_from_edge.invalidate()
-		self.voltage_vector.invalidate()
-		self.resistance_matrix.invalidate()
-		self.cycle_currents.invalidate()
+		self.__cyclebasis.invalidate()
+		self.__cycles_from_edge.invalidate()
+		self.__voltage_vector.invalidate()
+		self.__resistance_matrix.invalidate()
+		self.__cycle_currents.invalidate()
 
 	def multiply_edge_resistance(self, s, t, factor):
 		'''
 		Multiplies the resistance of an edge by a scalar factor.
 		'''
-		self.g.edge[s][t][EATTR_RESISTANCE] *= factor
+		self.__g.edge[s][t][EATTR_RESISTANCE] *= factor
 
-		self.cyclebasis       # still valid!
-		self.cycles_from_edge # still valid!
-		self.voltage_vector   # still valid!
-		self.resistance_matrix.invalidate()
-		self.cycle_currents.invalidate()
+		self.__cyclebasis       # still valid!
+		self.__cycles_from_edge # still valid!
+		self.__voltage_vector   # still valid!
+		self.__resistance_matrix.invalidate()
+		self.__cycle_currents.invalidate()
 
 	def assign_edge_resistance(self, s, t, value):
 		'''
 		Assigns a value to the resistance of an edge.
 		'''
-		self.g.edge[s][t][EATTR_RESISTANCE] = value
+		self.__g.edge[s][t][EATTR_RESISTANCE] = value
 
-		self.cyclebasis       # still valid!
-		self.cycles_from_edge # still valid!
-		self.voltage_vector   # still valid!
-		self.resistance_matrix.invalidate()
-		self.cycle_currents.invalidate()
+		self.__cyclebasis       # still valid!
+		self.__cycles_from_edge # still valid!
+		self.__voltage_vector   # still valid!
+		self.__resistance_matrix.invalidate()
+		self.__cycle_currents.invalidate()
 
 	# FIXME: Ick. This is here so that the node_deletion module can do what it needs.
 	#             I don't want to expose the graph directly, nor do I want to make
@@ -412,47 +410,49 @@ class MeshCurrentSolver:
 		'''
 		Get the immediate neighbors of a node.
 		'''
-		return self.g.neighbors(v)
+		return self.__g.neighbors(v)
 
-	# FIXME the cached properties really aren't meant to be part of the public api
+	def circuit(self):
+		'''
+		Get a copy of the current state of the circuit.
+		'''
+		return self.__g.copy()
+
 	@cached_property
-	def cyclebasis(self):
-		cb = self.cbupdater.get_cyclebasis()
+	def __cyclebasis(self):
+		cb = self.__cbupdater.get_cyclebasis()
 
 		# NOTE: this test is here because it is one of the only few paths that code
 		#  reliably passes through where the current state of the modified cyclebasis
 		#  and graph are both available.
 
 		# FIXME: whatever happened to validate_cyclebasis?
-		if len(cb) != len(nx.cycle_basis(self.g)):
+		if len(cb) != len(nx.cycle_basis(self.__g)):
 
 			# FIXME: This is an error (rather than assertion) due to an unresolved issue
 			#  with the builder updater algorithm;  I CANNOT say with confidence that
 			#  this will not occur. -_-
 			raise RuntimeError('Cyclebasis has incorrect rank ({}, need {}).'.format(
-				len(cb),len(nx.cycle_basis(self.g))))
+				len(cb),len(nx.cycle_basis(self.__g))))
 
 		return cb
 
 	@cached_property
-	def cycles_from_edge(self):
-		return compute_cycles_from_edge(self.g, self.cyclebasis.get())
+	def __cycles_from_edge(self):
+		return compute_cycles_from_edge(self.__g, self.__cyclebasis.get())
 
 	@cached_property
-	def voltage_vector(self):
-		return compute_voltage_vector(self.g, self.cyclebasis.get())
+	def __voltage_vector(self):
+		return compute_voltage_vector(self.__g, self.__cyclebasis.get())
 
 	@cached_property
-	def resistance_matrix(self):
-		return compute_resistance_matrix(self.g, self.cyclebasis.get(), self.cycles_from_edge.get())
+	def __resistance_matrix(self):
+		return compute_resistance_matrix(self.__g, self.__cyclebasis.get(), self.__cycles_from_edge.get())
 
 	@cached_property
-	def cycle_currents(self):
-		return compute_cycle_currents(self.resistance_matrix.get(), self.voltage_vector.get(), self.cyclebasis.get())
+	def __cycle_currents(self):
+		return compute_cycle_currents(self.__resistance_matrix.get(), self.__voltage_vector.get(), self.__cyclebasis.get())
 
-	# NOTE deficiency in API; No "correct" way for an outsider to access the state of the graph.
-	# It is tempting to use the output of this to reconstruct one, but such a reconstruction would
-	#   be missing any isolated vertices in the graph.
 	def get_all_currents(self):
 		'''
 		Compute all currents in the circuit.
@@ -463,7 +463,7 @@ class MeshCurrentSolver:
 		'''
 		# NOTE: of course, the guarantee that d[s,t] == -d[t,s] is written under the assumption
 		#       that d[s,t] is not NaN
-		d = compute_all_edge_currents(self.g, self.cycle_currents.get(), self.cycles_from_edge.get())
+		d = compute_all_edge_currents(self.__g, self.__cycle_currents.get(), self.__cycles_from_edge.get())
 		assert all(d[t,s] == -d[s,t] for s,t in d)
 		return d
 
@@ -473,9 +473,9 @@ class MeshCurrentSolver:
 
 		It is a ``KeyError`` if no such edge exists in the graph.
 		'''
-		if not self.g.has_edge(s,t):
+		if not self.__g.has_edge(s,t):
 			raise KeyError('no such edge: {}'.format(repr((s,t))))
-		return compute_single_edge_current(self.g, self.cycle_currents.get(), self.cycles_from_edge.get(), s, t)
+		return compute_single_edge_current(self.__g, self.__cycle_currents.get(), self.__cycles_from_edge.get(), s, t)
 
 #------------------------------------------------------------
 
