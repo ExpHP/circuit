@@ -59,10 +59,11 @@ class multiply_resistance(DeletionMode):
 		self.idempotent = idempotent
 
 	def deletion_func(self, solver, v):
-		if self.idempotent:
-			solver.assign_nearby_resistances(v, self.factor)
-		else:
-			solver.multiply_nearby_resistances(v, self.factor)
+		for t in solver.node_neighbors(v):
+			if self.idempotent:
+				solver.assign_edge_resistance(v, t, self.factor)
+			else:
+				solver.multiply_edge_resistance(v, t, self.factor)
 
 	def info(self):
 		return {

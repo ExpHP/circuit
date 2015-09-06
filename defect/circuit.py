@@ -338,6 +338,8 @@ class bound_cached_property:
 #
 # The class itself contains NO logic for computation.
 #
+# TODO: Make g, cbupdater and the cached props private, because it is absolutely NOT OKAY for
+#       them to be mutated willy-nilly.
 class MeshCurrentSolver:
 	'''
 	Computes currents in a circuit via mesh current analysis.
@@ -378,12 +380,11 @@ class MeshCurrentSolver:
 		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
-	def multiply_nearby_resistances(self, v, factor):
+	def multiply_edge_resistance(self, s, t, factor):
 		'''
-		Multiplies the resistance of edges connected to a vertex by a scalar factor.
+		Multiplies the resistance of an edge by a scalar factor.
 		'''
-		for t in self.g.neighbors(v):
-			self.g.edge[v][t][EATTR_RESISTANCE] *= factor
+		self.g.edge[s][t][EATTR_RESISTANCE] *= factor
 
 		self.cyclebasis       # still valid!
 		self.cycles_from_edge # still valid!
@@ -391,18 +392,27 @@ class MeshCurrentSolver:
 		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
 
-	def assign_nearby_resistances(self, v, value):
+	def assign_edge_resistance(self, s, t, value):
 		'''
-		Assigns a value to the resistance of all edges connected to a vertex.
+		Assigns a value to the resistance of an edge.
 		'''
-		for t in self.g.neighbors(v):
-			self.g.edge[v][t][EATTR_RESISTANCE] = value
+		self.g.edge[s][t][EATTR_RESISTANCE] = value
 
 		self.cyclebasis       # still valid!
 		self.cycles_from_edge # still valid!
 		self.voltage_vector   # still valid!
 		self.resistance_matrix.invalidate()
 		self.cycle_currents.invalidate()
+
+	# FIXME: Ick. This is here so that the node_deletion module can do what it needs.
+	#             I don't want to expose the graph directly, nor do I want to make
+	#             frequent copies due to its size... yet at the same time, a method
+	#             like this really feels out of place!
+	def node_neighbors(self, v):
+		'''
+		Get the immediate neighbors of a node.
+		'''
+		return self.g.neighbors(v)
 
 	# FIXME the cached properties really aren't meant to be part of the public api
 	@cached_property
