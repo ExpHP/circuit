@@ -45,15 +45,15 @@ def main():
 	parser.add_argument('input', type=str, help='.gpickle file of networkx graph')
 	parser.add_argument('--verbose', '-v', action='store_true')
 	parser.add_argument('--jobs', '-j', type=int, default=1, help='number of trials to run in parallel')
-	parser.add_argument('--trials', '-t', type=int, default=10, help='number of trials to do total')
-	parser.add_argument('--steps', '-s', type=int, default=100, help='number of steps per trial')
+	parser.add_argument('--trials', '-t', type=int, default=1, help='number of trials to do total')
+	parser.add_argument('--steps', '-s', type=int, default=None, help='number of steps per trial')
 	parser.add_argument('--config', '-c', type=str, default=None, help='Path to defect trial config TOML. '
 		'Default is derived from circuit (BASENAME.defect.toml)')
 	parser.add_argument('--substeps', '-x', type=int, default=1, help='number of defects added per step')
 	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file. Default is derived '
 		'from circuit (BASENAME.results.json).')
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
-	parser.add_argument('--selection-mode', '-S', type=str, required=True, choices=SELECTION_MODES, help='TODO')
+	parser.add_argument('--selection-mode', '-S', type=str, default='uniform', choices=SELECTION_MODES, help='TODO')
 	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
 
 	# cyclebasis options
@@ -65,12 +65,15 @@ def main():
 
 	args = parser.parse_args(sys.argv[1:])
 
-	if (args.output_pstats is not None and args.jobs != 1):
+	if (args.output_pstats is not None) and args.jobs != 1:
 		print('error: --output-pstats/-P is limited to --jobs 1',file=sys.stderr)
 		print('In other words: No multiprocess profiling!',file=sys.stderr)
 		sys.exit(1)
 
-	if (args.substeps < 1):
+	if (args.steps is not None) and args.steps < 0:
+		print('--steps must be a non-negative integer.',file=sys.stderr)
+		sys.exit(1)
+	if args.substeps < 1:
 		print('--substeps must be a positive integer.',file=sys.stderr)
 		sys.exit(1)
 
@@ -246,7 +249,15 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		return len(choices) == 0 or selector.is_done()
 
 	step_info = trial_info['steps']
-	for step in range(steps):
+
+	if steps is None: # default
+		stepiter = unlimited_range()
+	else:
+		# Do steps+1 iterations because the first iteration is not a full step.
+		# This way, steps=0 just does initial state, steps=1 adds one defect step, etc...
+		stepiter = range(steps+1)
+
+	for step in stepiter:
 		t = time.time()
 
 		# introduce defects
@@ -279,6 +290,12 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 			print('step:', step, 'time:', runtime, 'current:', current)
 
 	return trial_info
+
+def unlimited_range(start=0,step=1):
+	i = start
+	while True:
+		yield i
+		i += step
 
 def drop_extension(path):
 	head,tail = os.path.split(path)
