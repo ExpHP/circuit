@@ -94,16 +94,3 @@ def from_info(info):
 	cls = CLASSES_FROM_MODESTRS[modestr]
 	return cls.from_info(info)
 
-#--------------------------------------------------------
-
-def test_from_info(obj):
-	''' Test that an object can be recovered from ``from_info`` '''
-	info = obj.info()
-	obj2 = from_info(info)
-	assert type(obj) is type(obj2)
-	assert obj == obj2
-
-test_from_info(annihilation())
-test_from_info(multiply_resistance(100., False))
-test_from_info(multiply_resistance(100., True))
-
