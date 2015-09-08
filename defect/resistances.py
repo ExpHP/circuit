@@ -34,9 +34,9 @@ SELECTION_MODES = {
 	'bigholes': node_selection.by_deleted_neighbors([1,10**3,10**4,10**7]),
 }
 DELETION_MODES = {
-	'remove':   node_deletion.annihilation(),
-	'multiply': node_deletion.multiply_resistance(1000., idempotent=False),
-	'assign':   node_deletion.multiply_resistance(1000., idempotent=True),
+	'remove':   node_deletion.annihilation(radius=2),
+	'multiply': node_deletion.multiply_resistance(1000., idempotent=False, radius=2),
+	'assign':   node_deletion.multiply_resistance(1000., idempotent=True,  radius=2),
 }
 
 def main():
@@ -267,7 +267,7 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 					break  # stop adding defects (but do finish computing this step)
 
 				vdeleted = selector.select_one(choices)
-				deletion_func(solver, vdeleted)
+				deletion_func(solver, vdeleted, cannot_touch=measured_edge)
 
 				choices.remove(vdeleted)
 				deleted.append(vdeleted)
@@ -345,6 +345,7 @@ class Config:
 		return toml.dumps(d)
 
 def validating_conversion(basetype, pred, failmsg):
+	import argparse
 	def func(s):
 		error = argparse.ArgumentTypeError(repr(s) + failmsg)
 		# this is only intended for simple validation on simple types;

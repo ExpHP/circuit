@@ -385,6 +385,9 @@ class MeshCurrentSolver:
 		'''
 		Removes a vertex and all associated edges from the circuit.
 		'''
+		if not self.__g.has_node(v):
+			raise KeyError('No such node: {}'.format(repr(v)))
+
 		# update in-place
 		self.__g.remove_node(v)
 		self.__cbupdater.remove_vertex(self.__g, v)
@@ -428,6 +431,12 @@ class MeshCurrentSolver:
 		Get the immediate neighbors of a node.
 		'''
 		return self.__g.neighbors(v)
+
+	def node_exists(self, v):
+		'''
+		Determine if a node exists in the circuit. (Boolean)
+		'''
+		return self.__g.has_node(v)
 
 	def circuit(self):
 		'''

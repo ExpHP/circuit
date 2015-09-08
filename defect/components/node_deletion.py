@@ -14,8 +14,16 @@ class DeletionMode(metaclass=ABCMeta):
 
 	``DeletionMode``s are stateless and safe to reuse between trials.
 	'''
+	# FIXME: cannot_touch is a temporary HACK until I can think of something better.
+	#  It basically says: "do not modify these nodes or any edge connected to them
+	#   under any circumstances... um, unless it's an edge and you're deleting the
+	#   other node the edge is connected to, in which case it's totally fine that
+	#   the edge will be deleted as well. Yeppers."
+	# >_>
+	# This had to be added to protect the battery, because with the radius option,
+	#  defects are now capable of affecting nodes outside the set of `choices`!
 	@abstractmethod
-	def deletion_func(self, solver, v):
+	def deletion_func(self, solver, v, cannot_touch):
 		''' Add a defect to a ``MeshCurrentSolver``. '''
 		pass
 
@@ -53,10 +61,18 @@ class annihilation(DeletionMode):
 		assert radius >= MIN_VALID_RADIUS
 		self.radius = radius
 
-	def deletion_func(self, solver, v):
+	def deletion_func(self, solver, v, cannot_touch):
+		cannot_touch = set(cannot_touch)
+
+		if not solver.node_exists(v):
+			return
+
 		vs = _neighborhood(solver, v, maxdist=self.radius-1)
 		for node in vs:
-			solver.delete_node(node)
+			if node in cannot_touch:
+				continue
+			if solver.node_exists(node):
+				solver.delete_node(node)
 
 	def info(self):
 		return {
@@ -88,10 +104,14 @@ class multiply_resistance(DeletionMode):
 		self.idempotent = idempotent
 		self.radius = radius
 
-	def deletion_func(self, solver, v):
+	def deletion_func(self, solver, v, cannot_touch):
+		cannot_touch = set(cannot_touch)
+
 		vs = _neighborhood(solver, v, maxdist=self.radius-1)
 		es = _collect_edges(solver, vs)
 		for s,t in es:
+			if s in cannot_touch or t in cannot_touch:
+				continue
 			if self.idempotent:
 				solver.assign_edge_resistance(s, t, self.factor)
 			else:
