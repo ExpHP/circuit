@@ -17,6 +17,9 @@ __all__ = [
 	'validate_circuit',
 	'save_circuit',
 	'load_circuit',
+	'circuit_path_voltage',
+	'circuit_path_resistance',
+	'circuit_edge_sign',
 ]
 
 # attribute names used internally by circuits
@@ -111,24 +114,24 @@ class CircuitBuilder():
 		Produce a ``circuit``.
 		'''
 		g = self._g
-		voltage    = nx.get_edge_attributes(g, '_voltage')
-		resistance = nx.get_edge_attributes(g, '_resistance')
-		sources    = nx.get_edge_attributes(g, '_source')
+		voltages    = nx.get_edge_attributes(g, '_voltage')
+		resistances = nx.get_edge_attributes(g, '_resistance')
+		sources     = nx.get_edge_attributes(g, '_source')
 
 		# class invariant of CircuitBuilder; no attribute ever appears without the other two
-		assert set(voltage) == set(resistance) == set(sources)
+		assert set(voltages) == set(resistances) == set(sources)
 
 		# this covers edges present in the initial graph (passed into the constructor)
 		# which were not addressed via make_resistor and friends
-		missing_edges = [e for e in g.edges() if (e not in voltage) and (e[::-1] not in voltage)]
+		missing_edges = [e for e in g.edges() if (e not in voltages) and (e[::-1] not in voltages)]
 		for e in missing_edges:
-			voltage[e]     = self._DEFAULT_VOLTAGE
+			voltages[e]    = self._DEFAULT_VOLTAGE
 			resistances[e] = self._DEFAULT_RESISTANCE
 			sources[e]     = e[0]
 
 		copy = _copy_graph_without_attributes(g)
-		nx.set_edge_attributes(copy, EATTR_VOLTAGE, voltage)
-		nx.set_edge_attributes(copy, EATTR_RESISTANCE, resistance)
+		nx.set_edge_attributes(copy, EATTR_VOLTAGE, voltages)
+		nx.set_edge_attributes(copy, EATTR_RESISTANCE, resistances)
 		nx.set_edge_attributes(copy, EATTR_SOURCE, sources)
 		assert validate_circuit(copy)
 		return copy
@@ -201,17 +204,31 @@ def circuit_path_voltage(circuit, path):
 
 	>>> import networkx as nx
 	>>> builder = CircuitBuilder(nx.cycle_graph(5))
-	>>> builder.add_battery(2, 3, 6.0)
+	>>> builder.make_battery(2, 3, 6.0)
 	>>> circuit = builder.build()
-	>>> circuit_path_voltage([1, 2, 3, 4])
+	>>> circuit_path_voltage(circuit, [1, 2, 3, 4])
 	6.0
-	>>> circuit_path_voltage([4, 3, 2, 1])
+	>>> circuit_path_voltage(circuit, [4, 3, 2, 1])
 	-6.0
+
 	'''
 	acc = 0.0
 	for s,t in vpath.edges(path):
 		acc += circuit_edge_sign(circuit,s,t) * circuit.edge[s][t][EATTR_VOLTAGE]
 	return acc
+
+def circuit_path_resistance(circuit, path):
+	'''
+	Get the total resistance along a path.
+
+	>>> import networkx as nx
+	>>> builder = CircuitBuilder(nx.cycle_graph(5))
+	>>> builder.make_resistor(2, 3, 5.0)
+	>>> circuit = builder.build()
+	>>> circuit_path_resistance(circuit, [1, 2, 3, 4])
+	5.0
+	'''
+	return sum(circuit.edge[s][t][EATTR_RESISTANCE] for (s,t) in vpath.edges(path))
 
 def map_edge_attributes(g, d):
 	copy = copy_without_attributes(g)
