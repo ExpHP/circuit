@@ -14,17 +14,10 @@ class DeletionMode(metaclass=ABCMeta):
 
 	``DeletionMode``s are stateless and safe to reuse between trials.
 	'''
-	# FIXME: cannot_touch is a temporary HACK until I can think of something better.
-	#  It basically says: "do not modify these nodes or any edge connected to them
-	#   under any circumstances... um, unless it's an edge and you're deleting the
-	#   other node the edge is connected to, in which case it's totally fine that
-	#   the edge will be deleted as well. Yeppers."
-	# >_>
-	# This had to be added to protect the battery, because with the radius option,
-	#  defects are now capable of affecting nodes outside the set of `choices`!
+
 	@abstractmethod
-	def deletion_func(self, solver, v, cannot_touch):
-		''' Add a defect to a ``MeshCurrentSolver``. '''
+	def deleter(self, g):
+		''' Create a ``Deleter`` for a trial. '''
 		pass
 
 	@abstractmethod
@@ -41,6 +34,27 @@ class DeletionMode(metaclass=ABCMeta):
 	def __eq__(self, other):
 		# (assumes info() provides all of the meaningful content (and only that content))
 		return type(self) is type(other) and self.info() == other.info()
+
+class Deleter(metaclass=ABCMeta):
+	'''
+	Does the dirty work of DeletionMode for a trial.
+
+	This exists to encapsulate internal state. Unlike DeletionMode, Deleters are
+	allowed to be stateful (and thus only live for the duration of one trial)
+	'''
+
+	# FIXME: cannot_touch is a temporary HACK until I can think of something better.
+	#  It basically says: "do not modify these nodes or any edge connected to them
+	#   under any circumstances... um, unless it's an edge and you're deleting the
+	#   other node the edge is connected to, in which case it's totally fine that
+	#   the edge will be deleted as well. Yeppers."
+	# >_>
+	# This had to be added to protect the battery, because with the radius option,
+	#  defects are now capable of affecting nodes outside the set of `choices`!
+	@abstractmethod
+	def delete_one(self, solver, v, cannot_touch):
+		''' Introduce a defect to a ``MeshCurrentSolver``. '''
+		pass
 
 # It is a deliberate design choice that all deletion modes with a "radius" argument
 #  define it in such a way that this is the smallest possible value.
@@ -61,18 +75,8 @@ class annihilation(DeletionMode):
 		assert radius >= MIN_VALID_RADIUS
 		self.radius = radius
 
-	def deletion_func(self, solver, v, cannot_touch):
-		cannot_touch = set(cannot_touch)
-
-		if not solver.node_exists(v):
-			return
-
-		vs = _neighborhood(solver, v, maxdist=self.radius-1)
-		for node in vs:
-			if node in cannot_touch:
-				continue
-			if solver.node_exists(node):
-				solver.delete_node(node)
+	def deleter(self, g):
+		return _annihilation_Deleter(self, g)
 
 	def info(self):
 		return {
@@ -84,9 +88,25 @@ class annihilation(DeletionMode):
 	def from_info(cls, info):
 		return cls(radius=info['radius'])
 
+
+class _annihilation_Deleter(Deleter):
+	def __init__(self, parent, g):
+		self.radius = parent.radius
+		self.initial_g = g.copy()
+
+	def delete_one(self, solver, v, cannot_touch):
+		cannot_touch = set(cannot_touch)
+
+		vs = _neighborhood(self.initial_g, v, maxdist=self.radius-1)
+		for node in vs:
+			if node in cannot_touch:
+				continue
+			if solver.node_exists(node):
+				solver.delete_node(node)
+
 #--------------------------------------------------------
 
-class multiply_resistance(DeletionMode):
+class multiply_resistance(DeletionMode, Deleter):
 	'''
 	Modifies the resistances of edges connected to the vertex.
 
@@ -104,7 +124,10 @@ class multiply_resistance(DeletionMode):
 		self.idempotent = idempotent
 		self.radius = radius
 
-	def deletion_func(self, solver, v, cannot_touch):
+	def deleter(self, g):
+		return self # stateless
+
+	def delete_one(self, solver, v, cannot_touch):
 		cannot_touch = set(cannot_touch)
 
 		vs = _neighborhood(solver, v, maxdist=self.radius-1)
@@ -150,19 +173,29 @@ def from_info(info):
 
 #--------------------------------------------------------
 
-def _neighborhood(solver, v, maxdist):
+def _neighborhood(obj, v, maxdist):
+	from networkx import Graph
+	from defect.circuit import MeshCurrentSolver
 	''' Get all vertices up to ``maxdist`` edges from ``v``. '''
+	# FIXME faux polymorphism HACK;  also more evidence that it is silly to have MeshCurrentSolver
+	#        provide its own API for inspecting the graph
+	if isinstance(obj, Graph):
+		return _neighborhood_impl(obj.neighbors, v, maxdist)
+	elif isinstance(obj, MeshCurrentSolver):
+		return _neighborhood_impl(obj.node_neighbors, v, maxdist)
+
+def _neighborhood_impl(nbrfunc, v, maxdist):
 	if maxdist < 0:
 		return set()
 
 	out = set([v])
 	if maxdist > 0:
-		for nbr in solver.node_neighbors(v):
+		for nbr in nbrfunc(v):
 			# The following optimization is NOT valid when we are traversing in DFS order.
 			# If such an optimization REALLY is needed, rewrite this algo as a BFS instead!
 			#if nbr in out: continue  # <--- NOTE: DO NOT DO THIS!!!!!!!
 
-			out.update(_neighborhood(solver, nbr, maxdist-1))
+			out.update(_neighborhood_impl(nbrfunc, nbr, maxdist-1))
 
 	return out
 

@@ -27,6 +27,15 @@ class FromInfoTests(unittest.TestCase):
 		self.dotest(multiply_resistance(100., False, radius=2))
 		self.dotest(multiply_resistance(100., True,  radius=4))
 
+# Try to minimize coupling of the individual tests with DeletionMode's (fairly unstable)
+#  API by just having this function extract out the one most important thing (a callback
+#  for introducing a defect at a vertex)
+def get_delete_cb(solver, deletionmode):
+	deleter = deletionmode.deleter(solver.circuit())
+	def f(v):
+		return deleter.delete_one(solver, v, cannot_touch=[])
+	return f
+
 # Tests operating on an 8-node cycle graph.
 # Useful for very basic tests of functionality.
 class CycleGraphTests(unittest.TestCase):
@@ -47,10 +56,10 @@ class CycleGraphTests(unittest.TestCase):
 
 	def test_multiply(self):
 		solver = self.solver
-		deleter = multiply_resistance(4., False, radius=1)
+		delete = get_delete_cb(solver, multiply_resistance(4., False, radius=1))
 		# pick two nodes that share an edge to test non-idempotence
-		deleter.deletion_func(solver, 3)
-		deleter.deletion_func(solver, 4)
+		delete(3)
+		delete(4)
 
 		# inspect modified circuit resistances
 		mod_circuit = solver.circuit()
@@ -59,10 +68,10 @@ class CycleGraphTests(unittest.TestCase):
 
 	def test_assign(self):
 		solver = self.solver
-		deleter = multiply_resistance(4., True, radius=1)
+		delete = get_delete_cb(solver, multiply_resistance(4., True, radius=1))
 		# pick two nodes that share an edge to test idempotence
-		deleter.deletion_func(solver, 3)
-		deleter.deletion_func(solver, 4)
+		delete(3)
+		delete(4)
 
 		# inspect modified circuit resistances
 		mod_circuit = solver.circuit()
@@ -71,13 +80,30 @@ class CycleGraphTests(unittest.TestCase):
 
 	def test_remove(self):
 		solver = self.solver
-		deleter = annihilation(radius=1)
-		deleter.deletion_func(solver, 3)
-		deleter.deletion_func(solver, 4)
+		delete = get_delete_cb(solver, annihilation(radius=1))
+		delete(3)
+		delete(4)
 
 		# inspect modified node list
 		mod_circuit = solver.circuit()
 		self.assertListEqual(sorted(mod_circuit), [0,1,2,5,6,7])
+
+	# This test can be disabled if the behavior is no longer found desirable.
+	if True:
+
+		# tests that deleting a node with radius>1 still affects its neighborhood (acc.
+		#  to the initial graph state) even if the targeted node no longer exists.
+		def test_ghost_deletion(self):
+			def remaining_nodes():
+				return set(self.solver.circuit().nodes())
+
+			delete = get_delete_cb(self.solver, annihilation(radius=3))
+			delete(1) # deletes nodes 7 0 1 2 3
+			self.assertSetEqual(remaining_nodes(), set([4, 5, 6]))
+
+			delete(2) # a node that no longer exists, which has a neighbor that still does
+			self.assertSetEqual(remaining_nodes(), set([5, 6]))
+
 
 # Tests operating on a 6-node graph that looks like the Eiffel Tower:
 #                 (A)
@@ -122,61 +148,61 @@ class EiffelTowerTests(unittest.TestCase):
 
 	def test_multiply_large(self):
 		# radius large enough to affect all edges
-		deleter = multiply_resistance(4., False, radius=3)
+		delete = get_delete_cb(self.solver, multiply_resistance(4., False, radius=3))
 
 		self.check_all_resistances(2.)
-		deleter.deletion_func(self.solver, 'a') # an inner vertex
+		delete('a') # an inner vertex
 		self.check_all_resistances(8.)
-		deleter.deletion_func(self.solver, 'A') # an outer vertex
+		delete('A') # an outer vertex
 		self.check_all_resistances(32.)
 
 	def test_assign_large(self):
 		# radius large enough to affect all edges
-		deleter = multiply_resistance(4., True, radius=3)
+		delete = get_delete_cb(self.solver, multiply_resistance(4., True, radius=3))
 
 		self.check_all_resistances(2.)
-		deleter.deletion_func(self.solver, 'a') # an inner vertex
+		delete('a') # an inner vertex
 		self.check_all_resistances(4.)
-		deleter.deletion_func(self.solver, 'A') # an outer vertex
+		delete('A') # an outer vertex
 		self.check_all_resistances(4.)
 
 	def test_multiply_small(self):
 		# smaller radius so edges are left behind
-		deleter = multiply_resistance(4., False, radius=2)
+		delete = get_delete_cb(self.solver, multiply_resistance(4., False, radius=2))
 
-		deleter.deletion_func(self.solver, 'A') # outer vertex
+		delete('A') # outer vertex
 		self.check_resistances(['Aa','ab','ac'], 8.) # affected edges
 		self.check_resistances(['bB','cC','bc'], 2.) # unaffected edges
 
-		deleter.deletion_func(self.solver, 'B') # the other outer vertices
-		deleter.deletion_func(self.solver, 'C')
+		delete('B') # the other outer vertices
+		delete('C')
 		self.check_resistances(['ab','bc','ca'], 32.) # affected twice
 		self.check_resistances(['aA','bB','cC'], 8.)  # affected once
 
 	def test_assign_small(self):
 		# smaller radius so edges are left behind
-		deleter = multiply_resistance(4., True, radius=2)
+		delete = get_delete_cb(self.solver, multiply_resistance(4., True, radius=2))
 
-		deleter.deletion_func(self.solver, 'A') # outer vertex
+		delete('A') # outer vertex
 		self.check_resistances(['Aa','ab','ac'], 4.) # affected edges
 		self.check_resistances(['bB','cC','bc'], 2.) # unaffected edges
 
-		deleter.deletion_func(self.solver, 'B') # the other outer vertices
-		deleter.deletion_func(self.solver, 'C')
+		delete('B') # the other outer vertices
+		delete('C')
 		self.check_resistances(['ab','bc','ca'], 4.) # affected twice
 		self.check_resistances(['aA','bB','cC'], 4.) # affected once
 
 	def test_remove_large(self):
 		# radius large enough to affect all vertices
-		deleter = annihilation(radius=4)
-		deleter.deletion_func(self.solver, 'A') # an outer vertex
+		delete = get_delete_cb(self.solver, annihilation(radius=4))
+		delete('A') # an outer vertex
 
 		# there should be no nodes left!
 		self.assertSetEqual(set(self.solver.circuit()), set())
 
 	def test_remove_small(self):
 		# smaller radius so that some vertices are left behind
-		deleter = annihilation(radius=3)
+		delete = get_delete_cb(self.solver, annihilation(radius=3))
 
 		def remaining_nodes():
 			return set(self.solver.circuit().nodes())
@@ -185,13 +211,13 @@ class EiffelTowerTests(unittest.TestCase):
 		#  unexpected exception for some reason (I can think of mistakes
 		#  that might cause one if I ever were to implement a stateful
 		#  part to deletion methods like I have for selection)
-		deleter.deletion_func(self.solver, 'A') # an outer vertex
+		delete('A') # an outer vertex
 		self.assertSetEqual(remaining_nodes(), {'B', 'C'})
 
-		deleter.deletion_func(self.solver, 'B')
+		delete('B')
 		self.assertSetEqual(remaining_nodes(), {'C'})
 
-		deleter.deletion_func(self.solver, 'C')
+		delete('C')
 		self.assertSetEqual(remaining_nodes(), set())
 
 def assertAllClose(array1, array2):
