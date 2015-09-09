@@ -53,7 +53,14 @@ class Deleter(metaclass=ABCMeta):
 	#  defects are now capable of affecting nodes outside the set of `choices`!
 	@abstractmethod
 	def delete_one(self, solver, v, cannot_touch):
-		''' Introduce a defect to a ``MeshCurrentSolver``. '''
+		'''
+		Introduce a defect to a ``MeshCurrentSolver``.
+
+		``v`` is the event center.
+
+		Returns a list of nodes which are to be considered no longer eligible for
+		selection as an event center. (this list most likely includes ``v``)
+		'''
 		pass
 
 # It is a deliberate design choice that all deletion modes with a "radius" argument
@@ -104,6 +111,8 @@ class _annihilation_Deleter(Deleter):
 			if solver.node_exists(node):
 				solver.delete_node(node)
 
+		return [v] # only remove the center from the list of choices
+
 #--------------------------------------------------------
 
 class multiply_resistance(DeletionMode, Deleter):
@@ -139,6 +148,8 @@ class multiply_resistance(DeletionMode, Deleter):
 				solver.assign_edge_resistance(s, t, self.factor)
 			else:
 				solver.multiply_edge_resistance(s, t, self.factor)
+
+		return [v] # only remove the center from the list of choices
 
 	def info(self):
 		return {

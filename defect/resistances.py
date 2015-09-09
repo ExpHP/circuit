@@ -46,8 +46,8 @@ def main():
 	# some "type" callbacks for simple validations.
 	# Do not use this to test conditions based on factors external to the program
 	#  (such as path being writable), because these won't get called on default values!
-	nonnegative_int = validating_conversion(int, lambda x: x>0, 'is not a nonnegative integer')
-	positive_int = validating_conversion(int, lambda x: x>1, 'is not a positive integer')
+	nonnegative_int = validating_conversion(int, lambda x: x>=0, 'is not a nonnegative integer')
+	positive_int = validating_conversion(int, lambda x: x>=1, 'is not a positive integer')
 
 	parser.add_argument('input', type=str, help='.gpickle file of networkx graph')
 	parser.add_argument('--verbose', '-v', action='store_true')
@@ -228,7 +228,7 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		notice('Starting')
 
 	selector = selection_mode.selector(g)
-	deletion_func = deletion_mode.deletion_func
+	deleter  = deletion_mode.deleter(g)
 
 	is_deletable = lambda v: (v not in no_defect) and (v not in measured_edge)
 	choices = [v for v in g if is_deletable(v)]
@@ -252,25 +252,43 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		# This way, steps=0 just does initial state, steps=1 adds one defect step, etc...
 		stepiter = range(steps+1)
 
+	choices = set(choices)
+	max_defects = len(choices)
+
 	for step in stepiter:
 		t = time.time()
 
 		# introduce defects
-		deleted = []
+		defects = []
 		if step > 0:  # first step is initial state
 
 			if no_defects_possible():
 				break  # end trial
 
+			# Each substep represents an "event", which introduces 1 or more defects.
 			for _ in range(substeps):
 				if no_defects_possible():
-					break  # stop adding defects (but do finish computing this step)
+					break  # stop simulating events (but do compute current; the graph has changed)
 
-				vdeleted = selector.select_one(choices)
-				deletion_func(solver, vdeleted, cannot_touch=measured_edge)
+				initial_choices = len(choices)
 
-				choices.remove(vdeleted)
-				deleted.append(vdeleted)
+				# Get event center
+				vcenter = selector.select_one(choices)
+
+				# The deleter will return one or more nodes which are no longer eligible
+				#  to be an event center after this substep.
+				new_deleted = deleter.delete_one(solver, vcenter, cannot_touch=measured_edge)
+
+				# A 'defect' is defined as a node which formerly was (but is no longer)
+				#  eligible to be an event center.
+				new_defects = set(new_deleted) & choices
+				choices.difference_update(new_defects)
+				defects.extend(new_defects)
+
+				# Require at least one defect per substep.
+				# Now that Deleter is in control of which choices are removed, this is an artificial
+				#  restraint at best... but it is a desirable one.
+				assert len(choices) < initial_choices, "defect count did not increase this substep!"
 
 		# the big heavy calculation!
 		current = solver.get_current(*measured_edge)
@@ -279,7 +297,7 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 
 		step_info['runtime'].append(runtime)
 		step_info['current'].append(current)
-		step_info['deleted'].append(deleted)
+		step_info['deleted'].append(defects)
 
 		if verbose:
 			notice('step: %s   time: %s   current: %s', step, runtime, current)
