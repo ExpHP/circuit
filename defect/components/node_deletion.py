@@ -77,10 +77,12 @@ class annihilation(DeletionMode):
 	``radius=1`` deletes a single vertex, ``radius=2`` deletes a vertex
 	and its neighbors, etc.
 	'''
-	def __init__(self, radius):
+	def __init__(self, radius, single_defect):
 		assert isinstance(radius, int)
+		assert isinstance(single_defect, bool)
 		assert radius >= MIN_VALID_RADIUS
 		self.radius = radius
+		self.single_defect = single_defect
 
 	def deleter(self, g):
 		return _annihilation_Deleter(self, g)
@@ -89,16 +91,18 @@ class annihilation(DeletionMode):
 		return {
 			'mode': 'direct removal',
 			'radius': self.radius,
+			'single_defect': self.single_defect,
 		}
 
 	@classmethod
 	def from_info(cls, info):
-		return cls(radius=info['radius'])
+		return cls(radius=info['radius'], single_defect=info['single_defect'])
 
 
 class _annihilation_Deleter(Deleter):
 	def __init__(self, parent, g):
 		self.radius = parent.radius
+		self.single_defect = parent.single_defect
 		self.initial_g = g.copy()
 
 	def delete_one(self, solver, v, cannot_touch):
@@ -111,7 +115,10 @@ class _annihilation_Deleter(Deleter):
 			if solver.node_exists(node):
 				solver.delete_node(node)
 
-		return [v] # only remove the center from the list of choices
+		if self.single_defect:
+			return [v] # only remove the center from the list of choices
+		else:
+			return list(vs) # remove all
 
 #--------------------------------------------------------
 

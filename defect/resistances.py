@@ -37,9 +37,9 @@ SELECTION_MODES = {
 # XXX  I don't want to deal with subparsers yet. Not all options apply
 # XXX  to all modes
 DELETION_MODES = { # XXX
-	'remove':   lambda strength,radius: node_deletion.annihilation(radius),
-	'multiply': lambda strength,radius: node_deletion.multiply_resistance(strength, idempotent=False, radius=radius),
-	'assign':   lambda strength,radius: node_deletion.multiply_resistance(strength, idempotent=True,  radius=radius),
+	'remove':   lambda **kw: node_deletion.annihilation(kw['radius'], kw['single_defect']),
+	'multiply': lambda **kw: node_deletion.multiply_resistance(kw['strength'], False, kw['radius']),
+	'assign':   lambda **kw: node_deletion.multiply_resistance(kw['strength'], True,  kw['radius']),
 }
 
 def main():
@@ -76,8 +76,9 @@ def main():
 	# XXX temporary hack - options for configuring deletion modes because
 	# XXX  I don't want to deal with subparsers yet. Not all options apply
 	# XXX  to all modes
-	parser.add_argument('--Dstrength', type=float, default=10., help='defect strength')
-	parser.add_argument('--Dradius', type=int, default=1, help='defect radius')
+	parser.add_argument('--Dsingle-defect', action='store_true')
+	parser.add_argument('--Dstrength', type=float, default=10.)
+	parser.add_argument('--Dradius', type=int, default=1)
 
 	args = parser.parse_args(sys.argv[1:])
 
@@ -100,7 +101,7 @@ def main():
 
 	selection_mode = SELECTION_MODES[args.selection_mode]
 #	deletion_mode = DELETION_MODES[args.deletion_mode]
-	deletion_mode = DELETION_MODES[args.deletion_mode](args.Dstrength, args.Dradius) # XXX
+	deletion_mode = DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius, single_defect=args.Dsingle_defect) # XXX
 	cbprovider = cbprovider_from_args(basename, args)
 	config = Config.from_file(args.config)
 
