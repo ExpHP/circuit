@@ -108,10 +108,9 @@ class _annihilation_Deleter(Deleter):
 	def delete_one(self, solver, v, cannot_touch):
 		cannot_touch = set(cannot_touch)
 
-		vs = _neighborhood(self.initial_g, v, maxdist=self.radius-1)
+		vs = _neighborhood(self.initial_g, v, maxdist=self.radius-1, noentry=cannot_touch)
 		for node in vs:
-			if node in cannot_touch:
-				continue
+			assert node not in cannot_touch
 			if solver.node_exists(node):
 				solver.delete_node(node)
 
@@ -146,7 +145,7 @@ class multiply_resistance(DeletionMode, Deleter):
 	def delete_one(self, solver, v, cannot_touch):
 		cannot_touch = set(cannot_touch)
 
-		vs = _neighborhood(solver, v, maxdist=self.radius-1)
+		vs = _neighborhood(solver, v, maxdist=self.radius-1, noentry=cannot_touch)
 		es = _collect_edges(solver, vs)
 		for s,t in es:
 			if s in cannot_touch or t in cannot_touch:
@@ -191,19 +190,19 @@ def from_info(info):
 
 #--------------------------------------------------------
 
-def _neighborhood(obj, v, maxdist):
+def _neighborhood(obj, v, maxdist, noentry):
 	from networkx import Graph
 	from defect.circuit import MeshCurrentSolver
 	''' Get all vertices up to ``maxdist`` edges from ``v``. '''
 	# FIXME faux polymorphism HACK;  also more evidence that it is silly to have MeshCurrentSolver
 	#        provide its own API for inspecting the graph
 	if isinstance(obj, Graph):
-		return _neighborhood_impl(obj.neighbors, v, maxdist)
+		return _neighborhood_impl(obj.neighbors, v, maxdist, noentry)
 	elif isinstance(obj, MeshCurrentSolver):
-		return _neighborhood_impl(obj.node_neighbors, v, maxdist)
+		return _neighborhood_impl(obj.node_neighbors, v, maxdist, noentry)
 
-def _neighborhood_impl(nbrfunc, v, maxdist):
-	if maxdist < 0:
+def _neighborhood_impl(nbrfunc, v, maxdist, noentry):
+	if maxdist < 0 or v in noentry:
 		return set()
 
 	out = set([v])
@@ -213,7 +212,7 @@ def _neighborhood_impl(nbrfunc, v, maxdist):
 			# If such an optimization REALLY is needed, rewrite this algo as a BFS instead!
 			#if nbr in out: continue  # <--- NOTE: DO NOT DO THIS!!!!!!!
 
-			out.update(_neighborhood_impl(nbrfunc, nbr, maxdist-1))
+			out.update(_neighborhood_impl(nbrfunc, nbr, maxdist-1, noentry))
 
 	return out
 
