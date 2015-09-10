@@ -65,6 +65,7 @@ def main():
 	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
 	parser.add_argument('--selection-mode', '-S', type=str, default='uniform', choices=SELECTION_MODES, help='TODO')
 	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
+	parser.add_argument('--alltheway', dest='end_on_disconnect', action='store_false', help='always have a trial continue until there are no nodes left, even if the circuit is disconnected')
 
 	# cyclebasis options
 	group = parser.add_mutually_exclusive_group()
@@ -123,6 +124,7 @@ def main():
 		measured_edge = config.get_measured_edge(),
 		no_defect = config.get_no_defect(),
 		verbose = args.verbose,
+		end_on_disconnect = args.end_on_disconnect,
 	)
 	# Pass g via a temp file in case it is extremely large.
 	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to the wrapper
@@ -232,7 +234,7 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_edge, *, no_defect=[], substeps=1, verbose=False):
+def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_edge, *, no_defect=[], substeps=1, verbose=False, end_on_disconnect=True):
 	no_defect = set(no_defect)
 
 	if verbose:
@@ -251,8 +253,10 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		'steps': {'runtime':[], 'current':[], 'deleted':[]},
 	}
 
-	def no_defects_possible():
-		return len(choices) == 0 or selector.is_done()
+	def trial_should_end():
+		return (len(choices) == 0 # no defects possible
+			or selector.is_done() # e.g. a replay ended
+			or (end_on_disconnect and current == 0.))
 
 	step_info = trial_info['steps']
 
@@ -273,13 +277,13 @@ def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_e
 		defects = []
 		if step > 0:  # first step is initial state
 
-			if no_defects_possible():
-				break  # end trial
+			if trial_should_end():
+				break  # we're done, period (the final step has already been recorded)
 
 			# Each substep represents an "event", which introduces 1 or more defects.
 			for _ in range(substeps):
-				if no_defects_possible():
-					break  # stop simulating events (but do compute current; the graph has changed)
+				if trial_should_end():
+					break  # stop simulating events (but do record this final step)
 
 				initial_choices = len(choices)
 
