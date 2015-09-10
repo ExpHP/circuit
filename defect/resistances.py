@@ -33,10 +33,13 @@ SELECTION_MODES = {
 	'uniform':  node_selection.uniform(),
 	'bigholes': node_selection.by_deleted_neighbors([1,10**3,10**4,10**7]),
 }
-DELETION_MODES = {
-	'remove':   node_deletion.annihilation(radius=2),
-	'multiply': node_deletion.multiply_resistance(1000., idempotent=False, radius=2),
-	'assign':   node_deletion.multiply_resistance(1000., idempotent=True,  radius=2),
+# XXX temporary hack - lambdas to handle options for deletion modes because
+# XXX  I don't want to deal with subparsers yet. Not all options apply
+# XXX  to all modes
+DELETION_MODES = { # XXX
+	'remove':   lambda strength,radius: node_deletion.annihilation(radius),
+	'multiply': lambda strength,radius: node_deletion.multiply_resistance(strength, idempotent=False, radius=radius),
+	'assign':   lambda strength,radius: node_deletion.multiply_resistance(strength, idempotent=True,  radius=radius),
 }
 
 def main():
@@ -70,6 +73,12 @@ def main():
 	group.add_argument('--cyclebasis-planar', type=str, default=None, help='Path to planar embedding info, which '
 		'can be provided in place of a .cycles file for planar graphs.  Default is BASENAME.planar.gpos.')
 
+	# XXX temporary hack - options for configuring deletion modes because
+	# XXX  I don't want to deal with subparsers yet. Not all options apply
+	# XXX  to all modes
+	parser.add_argument('--Dstrength', type=float, default=10., help='defect strength')
+	parser.add_argument('--Dradius', type=int, default=1, help='defect radius')
+
 	args = parser.parse_args(sys.argv[1:])
 
 	if (args.output_pstats is not None) and args.jobs != 1:
@@ -90,7 +99,8 @@ def main():
 	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
 
 	selection_mode = SELECTION_MODES[args.selection_mode]
-	deletion_mode = DELETION_MODES[args.deletion_mode]
+#	deletion_mode = DELETION_MODES[args.deletion_mode]
+	deletion_mode = DELETION_MODES[args.deletion_mode](args.Dstrength, args.Dradius) # XXX
 	cbprovider = cbprovider_from_args(basename, args)
 	config = Config.from_file(args.config)
 
