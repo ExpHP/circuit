@@ -23,7 +23,7 @@ class FromInfoTests(unittest.TestCase):
 
 	def test_all(self):
 		# Hmmm. Feels as though I am liable to forget to add things to this list...
-		self.dotest(annihilation(radius=3))
+		self.dotest(annihilation(radius=3, single_defect=False))
 		self.dotest(multiply_resistance(100., False, radius=2))
 		self.dotest(multiply_resistance(100., True,  radius=4))
 
@@ -80,7 +80,7 @@ class CycleGraphTests(unittest.TestCase):
 
 	def test_remove(self):
 		solver = self.solver
-		delete = get_delete_cb(solver, annihilation(radius=1))
+		delete = get_delete_cb(solver, annihilation(radius=1, single_defect=False))
 		delete(3)
 		delete(4)
 
@@ -97,7 +97,7 @@ class CycleGraphTests(unittest.TestCase):
 			def remaining_nodes():
 				return set(self.solver.circuit().nodes())
 
-			delete = get_delete_cb(self.solver, annihilation(radius=3))
+			delete = get_delete_cb(self.solver, annihilation(radius=3, single_defect=False))
 			delete(1) # deletes nodes 7 0 1 2 3
 			self.assertSetEqual(remaining_nodes(), set([4, 5, 6]))
 
@@ -194,7 +194,7 @@ class EiffelTowerTests(unittest.TestCase):
 
 	def test_remove_large(self):
 		# radius large enough to affect all vertices
-		delete = get_delete_cb(self.solver, annihilation(radius=4))
+		delete = get_delete_cb(self.solver, annihilation(radius=4, single_defect=False))
 		delete('A') # an outer vertex
 
 		# there should be no nodes left!
@@ -202,7 +202,7 @@ class EiffelTowerTests(unittest.TestCase):
 
 	def test_remove_small(self):
 		# smaller radius so that some vertices are left behind
-		delete = get_delete_cb(self.solver, annihilation(radius=3))
+		delete = get_delete_cb(self.solver, annihilation(radius=3, single_defect=False))
 
 		def remaining_nodes():
 			return set(self.solver.circuit().nodes())

@@ -243,45 +243,6 @@ def remove_filament_from_tip(g,v):
 		v = neighbor
 
 
-def test_known_cyclebasis(g, xs, ys, expected):
-	for step in range(10):
-		rotx, roty = rotate_coord_maps(xs, ys, 2*math.pi*random.random())
-		cb = planar_cycle_basis_nx(g, rotx, roty)
-
-		assert vpath.cyclebases_equal(cb, expected)
-
-
-#----------------------------------------------------
-# These two tests identify rather nasty edge cases;
-# As it turns out, the problems of determining a planar cycle basis and
-#  of identifying faces in a planar graph are NOT equivalent.
-
-# a cycle inside another, sharing a vertex
-def test_triangles():
-	g = nx.Graph()
-	g.add_path([0,1,2,0,3,4,0])
-	xs,ys = {}, {}
-	xs[0] =  0.0; ys[0] = 0.0
-	xs[1] = -0.5; ys[1] = 1.0
-	xs[2] = +0.5; ys[2] = 1.0
-	xs[3] = -1.5; ys[3] = 2.0
-	xs[4] = +1.5; ys[4] = 2.0
-
-	test_known_cyclebasis(g, xs, ys, [[0,1,2,0],[0,3,4,0]])
-
-# a cycle inside another, connected by a 1-edge filament
-def test_hanging_diamond():
-	g = nx.Graph()
-	g.add_path([0,1,2,3,0,4,5,6,7,4])
-	xs,ys = {v:0.0 for v in g}, {v:0.0 for v in g}
-
-	xs[1] = +1.0; xs[5] = +0.5
-	xs[3] = -1.0; xs[7] = -0.5
-	ys[0] = +1.0; ys[4] = +0.5
-	ys[2] = -1.0; ys[6] = -0.5
-
-	test_known_cyclebasis(g, xs, ys, [[0,1,2,3,0],[4,5,6,7,4]])
-
 #----------------------------------------------------
 
 # Updates a cyclebasis for a straight-edge planar graph to account for the
@@ -470,5 +431,3 @@ assert recombine_aligned_paths([[1,2,3],[4,5,6]]) == [[1,2,3],[4,5,6]] # bad-ish
 assert recombine_aligned_paths([[1,2,3],[5,6,7],[3,4,5]]) == [[1,2,3,4,5,6,7]]
 assert vpath.is_cycle(recombine_aligned_paths([[1,2,3],[5,6,1],[3,4,5]]))
 
-test_triangles()
-test_hanging_diamond()

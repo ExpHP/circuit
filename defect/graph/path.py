@@ -77,19 +77,3 @@ def canonicalize_cycle(seq, directed=False, key=lambda v:v):
 # edges(path) => iterator of (source,target) for each edge
 edges = util.window2
 
-#------------------------------------------------------------------
-
-# /me needs to figure out how to write nose tests
-
-assert rotate_cycle([4,5,6,7,8,4],3)  == [7,8,4,5,6,7]
-assert rotate_cycle([4,5,6,7,8,4],-1) == [8,4,5,6,7,8]
-assert rotate_cycle([4,5,6,7,8,4],0)  == [4,5,6,7,8,4]
-
-assert     can_join([1,2,3],[3,4,5])
-assert     can_join([3,4,5],[1,2,3],swapok=True)
-assert not can_join([1,2,3],[7,8,9],swapok=True)
-assert not can_join([3,4,5],[1,2,3])
-
-assert join([1,2,3],[3,4,5]) == [1,2,3,4,5]
-util.assertRaises(ValueError, join, [3,4,5], [1,2,3])
-
