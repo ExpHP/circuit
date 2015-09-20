@@ -11,6 +11,16 @@ __all__ = [
 	'fixed_order',
 ]
 
+# NOTE: Unlike the other trial runner components, SelectionMode currently does not
+#  supply a ``from_info`` method or equality testing; this is because, at the time this
+#  comment is being written, there is at least one SelectionMode (the fixed order mode)
+#  which contains a potentially large data structure which is deliberately left out of
+#  the ``info()`` output.
+#
+# These circumstances are not ideal, and it would be nice if ALL trial runner components
+#  were small value-based structures. ``fixed_order`` would have to be modified to
+#  reference a filepath instead.
+
 class SelectionMode(metaclass=ABCMeta):
 	'''
 	A component of the defect trial runner.  Selects where defects are introduced.
