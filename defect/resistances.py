@@ -11,6 +11,8 @@ try:
 except ImportError:
 	import profile
 
+from defect.trial_runner import TrialRunner
+
 import networkx as nx
 import numpy as np
 import json
@@ -100,13 +102,23 @@ def main():
 	args.config = get_optional_path(args.config, '.defect.toml', '--config')
 	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
 
-	selection_mode = SELECTION_MODES[args.selection_mode]
-#	deletion_mode = DELETION_MODES[args.deletion_mode]
-	deletion_mode = DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius, single_defect=args.Dsingle_defect) # XXX
-	cbprovider = cbprovider_from_args(basename, args)
 	config = Config.from_file(args.config)
 
 	g = load_circuit(args.input)
+
+	runner = TrialRunner()
+	runner.set_selection_mode(SELECTION_MODES[args.selection_mode])
+	runner.set_deletion_mode(DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius, single_defect=args.Dsingle_defect)) # XXX
+	runner.set_cyclebasis_provider(cbprovider_from_args(basename, args))
+	if args.steps is not None:
+		runner.set_step_limit(args.steps)
+	else:
+		runner.unset_step_limit()
+	runner.set_defects_per_step(args.substeps)
+	runner.set_measured_edge(*config.get_measured_edge())
+	runner.set_initial_circuit(g)
+	runner.set_initial_choices(set(g) - set(config.get_no_defect()))
+	runner.set_end_on_disconnect(args.end_on_disconnect)
 
 	# save the user some grief; fail early if output paths are not writable
 	for path in (args.output_json, args.output_pstats):
@@ -114,20 +126,12 @@ def main():
 			die_if_not_writable(path)
 
 	# The function that worker threads will invoke
-	cmd_once = functools.partial(run_trial_nx,
-		# g is deliberately missing from this invocation
-		steps = args.steps,
-		substeps = args.substeps,
-		cbprovider = cbprovider,
-		selection_mode = selection_mode,
-		deletion_mode = deletion_mode,
-		measured_edge = config.get_measured_edge(),
-		no_defect = config.get_no_defect(),
-		verbose = args.verbose,
-		end_on_disconnect = args.end_on_disconnect,
-	)
-	# Pass g via a temp file in case it is extremely large.
-	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to the wrapper
+	cmd_once = functools.partial(TrialRunner.run_trial, verbose=args.verbose)
+
+	# Bind to the runner instance via a temp file as it may be extremely large.
+	# (this limits the number of simultaneous in-memory copies to the number of
+	#  RUNNING jobs, rather than one for each trial that WILL run)
+	cmd_wrapper = TempfileWrapper(cmd_once, runner) # MUST keep a living reference to the wrapper!!
 	cmd_once = cmd_wrapper.func
 
 	# Callbacks for reporting when a trial starts/ends
@@ -148,9 +152,9 @@ def main():
 
 	info = {}
 
-	info['selection_mode'] = selection_mode.info()
-	info['defect_mode'] = deletion_mode.info()
-	info['cyclebasis_gen'] = cbprovider.info()
+	info['selection_mode'] = runner.selection_mode.info()
+	info['defect_mode'] = runner.deletion_mode.info()
+	info['cyclebasis_gen'] = runner.cbprovider.info()
 
 	info['process_count'] = args.jobs
 	info['profiling_enabled'] = (args.output_pstats is not None)
@@ -253,105 +257,11 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
-def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_edge, *, no_defect=[], substeps=1, verbose=False, end_on_disconnect=True):
-	no_defect = set(no_defect)
-
-	selector = selection_mode.selector(g)
-	deleter  = deletion_mode.deleter(g)
-
-	is_deletable = lambda v: (v not in no_defect) and (v not in measured_edge)
-	choices = [v for v in g if is_deletable(v)]
-	solver  = MeshCurrentSolver(g, cbprovider.new_cyclebasis(g), cbupdater=cbprovider.cbupdater())
-
-	trial_info = {
-		'graph': graph_info(g),
-		'num_deletable': len(choices),
-		'steps': {'runtime':[], 'current':[], 'deleted':[]},
-	}
-
-	def trial_should_end():
-		return (len(choices) == 0 # no defects possible
-			or selector.is_done() # e.g. a replay ended
-			or (end_on_disconnect and current == 0.))
-
-	step_info = trial_info['steps']
-
-	if steps is None: # default
-		stepiter = unlimited_range()
-	else:
-		# Do steps+1 iterations because the first iteration is not a full step.
-		# This way, steps=0 just does initial state, steps=1 adds one defect step, etc...
-		stepiter = range(steps+1)
-
-	choices = set(choices)
-	max_defects = len(choices)
-
-	for step in stepiter:
-		t = time.time()
-
-		# introduce defects
-		defects = []
-		if step > 0:  # first step is initial state
-
-			if trial_should_end():
-				break  # we're done, period (the final step has already been recorded)
-
-			# Each substep represents an "event", which introduces 1 or more defects.
-			for _ in range(substeps):
-				if trial_should_end():
-					break  # stop simulating events (but do record this final step)
-
-				initial_choices = len(choices)
-
-				# Get event center
-				vcenter = selector.select_one(choices)
-
-				# The deleter will return one or more nodes which are no longer eligible
-				#  to be an event center after this substep.
-				new_deleted = deleter.delete_one(solver, vcenter, cannot_touch=measured_edge)
-
-				# A 'defect' is defined as a node which formerly was (but is no longer)
-				#  eligible to be an event center.
-				new_defects = set(new_deleted) & choices
-				choices.difference_update(new_defects)
-				defects.extend(new_defects)
-
-				# Require at least one defect per substep.
-				# Now that Deleter is in control of which choices are removed, this is an artificial
-				#  restraint at best... but it is a desirable one.
-				assert len(choices) < initial_choices, "defect count did not increase this substep!"
-
-		# the big heavy calculation!
-		current = solver.get_current(*measured_edge)
-
-		runtime = time.time() - t
-
-		step_info['runtime'].append(runtime)
-		step_info['current'].append(current)
-		step_info['deleted'].append(defects)
-
-		if verbose:
-			notice('step: %s   time: %s   current: %s', step, runtime, current)
-
-	return trial_info
-
-def unlimited_range(start=0,step=1):
-	i = start
-	while True:
-		yield i
-		i += step
-
 def drop_extension(path):
 	head,tail = os.path.split(path)
 	if '.' in tail:
 		tail, _ = tail.rsplit('.', 1)
 	return os.path.join(head, tail)
-
-def graph_info(g):
-	return {
-		'num_vertices': g.number_of_nodes(),
-		'num_edges':    g.number_of_edges(),
-	}
 
 class Config:
 	def __init__(self, measured_edge=None, no_defect=None):

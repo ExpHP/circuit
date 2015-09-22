@@ -1,0 +1,210 @@
+
+from defect.components.node_deletion import *
+from defect.components.node_selection import *
+from defect.components.cyclebasis_provider import *
+from defect.circuit import load_circuit, MeshCurrentSolver
+
+import time
+
+class TrialRunner:
+	# Named special values
+	# These can't be ``object()``s because their identity must be
+	#  preserved after pickling
+	STEPS_UNLIMITED = None
+	CHOICES_ALL = None
+	NOT_SET = None
+
+	def __init__(self):
+		# Defaults
+		self.selection_mode = uniform()
+		self.deletion_mode  = self.NOT_SET
+		self.cbprovider     = self.NOT_SET
+
+		self.set_initial_choices(self.CHOICES_ALL)
+		self.initial_circuit = self.NOT_SET
+		self.measured_edge   = self.NOT_SET
+
+		self.set_end_on_disconnect(True)
+		self.set_defects_per_step(1)
+		self.set_step_limit(self.STEPS_UNLIMITED)
+
+	def set_measured_edge(self, s, t):
+		self.measured_edge = (s, t)
+
+	def set_selection_mode(self, obj):
+		self.selection_mode = obj
+	def set_deletion_mode(self, obj):
+		self.deletion_mode = obj
+	# FIXME remove
+	def set_cyclebasis_provider(self, obj):
+		self.cbprovider = obj
+
+	def set_end_on_disconnect(self, val):
+		assert isinstance(val, bool)
+		self.end_on_disconnect = val
+
+	def set_defects_per_step(self, val):
+		assert isinstance(val, int)
+		assert val > 0
+		self.substeps = val
+
+	# FIXME add
+#	def set_initial_cyclebasis(self, cycles):
+#		self.initial_cycles = list(map(list(cycles)))
+	def set_initial_circuit(self, circuit):
+		self.initial_circuit = circuit
+	def set_initial_choices(self, choices):
+		if choices == self.CHOICES_ALL:
+			self.initial_choices = choices
+		else:
+			self.initial_choices = set(choices)
+	def set_measured_edge(self, s, t):
+		self.measured_edge = (s, t)
+
+	def unset_step_limit(self):
+		self.set_step_limit(self.STEPS_UNLIMITED)
+	def set_step_limit(self, val):
+		assert (val is self.STEPS_UNLIMITED
+			or (isinstance(val, int) and val >= 0))  # zero OK; just computes initial state
+		self.steps = val
+
+	# This object does NOT mutate any members of TrialRunner.
+	# It runs a full trial from scratch.
+	def run_trial(self, verbose=False):
+		for (var, name) in [
+			(self.initial_circuit, 'initial circuit'),
+			(self.measured_edge, 'measured edge'),
+			(self.deletion_mode, 'deletion mode'),
+			(self.selection_mode, 'selection mode'),
+			(self.cbprovider, 'cyclebasis provider'),
+		]:
+			if var == self.NOT_SET:
+				raise RuntimeError('{} is not set'.format(name))
+
+		if verbose:
+			notice('Initializing trial')
+
+		# Generate stateful objects used in trial
+
+		# Initial graph is given directly to some object's constructors
+		#  (the expectation being that they'll make a copy if they plan to modify it)
+		g = self.initial_circuit
+
+		if self.initial_choices is self.CHOICES_ALL:
+			choices = set(self.initial_circuit)
+		else:
+			choices = set(self.initial_choices)
+
+		# battery vertices can never have defects
+		for v in self.measured_edge:
+			choices.remove(v)
+
+		initialcb = self.cbprovider.new_cyclebasis(g)
+		cbupdater = self.cbprovider.cbupdater()
+		solver = MeshCurrentSolver(g, initialcb, cbupdater)
+
+		result = {}
+		result['graph'] = {
+			'num_deletable': len(choices),
+			'num_vertices': g.number_of_nodes(),
+			'num_edges': g.number_of_edges(),
+		}
+		result['steps'] = self._run_trial_steps(
+			verbose=verbose,
+			solver=solver,
+			deleter=self.deletion_mode.deleter(g),
+			selector=self.selection_mode.selector(g),
+			choice_set=choices,
+		)
+		return result
+
+	# This object does NOT mutate any members of TrialRunner.
+	# Any mutable arguments passed to this method are consumed; do not reuse them.
+	def _run_trial_steps(self, verbose=False, *, solver, deleter, selector, choice_set):
+
+		# output
+		step_info = {'runtime':[], 'current':[], 'deleted':[]}
+
+		max_defects = len(choice_set)
+
+		def trial_should_end():
+			return (len(choice_set) == 0 # no defects possible
+				or selector.is_done() # e.g. a replay ended
+				or (self.end_on_disconnect and current == 0.))
+
+		if self.steps is self.STEPS_UNLIMITED:
+			stepiter = unlimited_range()
+		else:
+			# Do steps+1 iterations because the first iteration is not a full step.
+			# This way, steps=0 just does initial state, steps=1 adds one defect step, etc...
+			stepiter = range(self.steps + 1)
+
+		for step in stepiter:
+			t = time.time()
+
+			# introduce defects
+			defects = []
+			if step > 0:  # first step is initial state
+
+				if trial_should_end():
+					break  # we're done, period (the final step has already been recorded)
+
+				# TODO: change this back to 1 defect per substep
+				# Each substep represents an "event", which introduces 1 or more defects.
+				for _ in range(self.substeps):
+					if trial_should_end():
+						break  # stop simulating events (but do record this final step)
+
+					initial_choices = len(choice_set)
+
+					# Get event center
+					vcenter = selector.select_one(choice_set)
+
+					# The deleter will return one or more nodes which are no longer eligible
+					#  to be an event center after this substep.
+					new_deleted = deleter.delete_one(solver, vcenter, cannot_touch=self.measured_edge)
+
+					# A 'defect' is defined as a node which formerly was (but is no longer)
+					#  eligible to be an event center.
+					new_defects = set(new_deleted) & choice_set
+					choice_set.difference_update(new_defects)
+					defects.extend(new_defects)
+
+					# Require at least one defect per substep.
+					# Now that Deleter is in control of which choices are removed, this is an artificial
+					#  restraint at best... but it is a desirable one.
+					assert len(choice_set) < initial_choices, "defect count did not increase this substep!"
+
+			# the big heavy calculation!
+			current = solver.get_current(*self.measured_edge)
+
+			runtime = time.time() - t
+
+			step_info['runtime'].append(runtime)
+			step_info['current'].append(current)
+			step_info['deleted'].append(defects)
+
+			if verbose:
+				notice('step: %s   time: %s   current: %s', step, runtime, current)
+
+		return step_info
+
+def unlimited_range(start=0, step=1):
+	i = start
+	while True:
+		yield i
+		i += step
+
+# FIXME: carryover from when the trial runner was fully contained in one module
+# think logger.info, except the name `info` already belonged to
+#  a local variable in some places
+def notice(msg, *args):
+	print(msg % args)
+
+def warn(msg, *args):
+	print('Warning: ' + (msg % args), file=sys.stderr)
+
+def die(msg, *args, code=1):
+	print('Fatal: ' + (msg % args), file=sys.stderr)
+	sys.exit(code)
+
