@@ -27,9 +27,6 @@ class planar:
 		pos = fileio.gpos.read_gpos(path)
 		return cls(pos)
 
-	def cbupdater(self):
-		return builder_cbupdater()
-
 	def new_cyclebasis(self, g):
 		xs,ys = unzip_dict(self.__pos)
 		return defect.graph.cyclebasis.planar.planar_cycle_basis_nx(g, xs, ys)
@@ -41,9 +38,6 @@ class planar:
 class from_file:
 	def __init__(self, path):
 		self.path = path
-
-	def cbupdater(self):
-		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
 		# TODO we should validate the cyclebasis against g here
@@ -76,9 +70,6 @@ class last_resort:
 class from_existing:
 	def __init__(self, cyclebasis):
 		self.cycles = cyclebasis
-
-	def cbupdater(self):
-		return builder_cbupdater()
 
 	def new_cyclebasis(self, g):
 		return self.cycles

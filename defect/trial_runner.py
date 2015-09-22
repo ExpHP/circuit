@@ -18,7 +18,8 @@ class TrialRunner:
 		# Defaults
 		self.selection_mode = uniform()
 		self.deletion_mode  = self.NOT_SET
-		self.cbprovider     = self.NOT_SET
+		# here we store the class so we can generate fresh instances (cbupdater is stateful)
+		self.cbupdater_cls  = builder_cbupdater
 
 		self.set_initial_choices(self.CHOICES_ALL)
 		self.initial_circuit = self.NOT_SET
@@ -31,13 +32,11 @@ class TrialRunner:
 	def set_measured_edge(self, s, t):
 		self.measured_edge = (s, t)
 
+	# FIXME take string modes and kw args
 	def set_selection_mode(self, obj):
 		self.selection_mode = obj
 	def set_deletion_mode(self, obj):
 		self.deletion_mode = obj
-	# FIXME remove
-	def set_cyclebasis_provider(self, obj):
-		self.cbprovider = obj
 
 	def set_end_on_disconnect(self, val):
 		assert isinstance(val, bool)
@@ -48,11 +47,10 @@ class TrialRunner:
 		assert val > 0
 		self.substeps = val
 
-	# FIXME add
-#	def set_initial_cyclebasis(self, cycles):
-#		self.initial_cycles = list(map(list(cycles)))
+	def set_initial_cycles(self, cycles):
+		self.initial_cycles = list(map(list, cycles)) # deep-listify
 	def set_initial_circuit(self, circuit):
-		self.initial_circuit = circuit
+		self.initial_circuit = fastcopy(circuit)
 	def set_initial_choices(self, choices):
 		if choices == self.CHOICES_ALL:
 			self.initial_choices = choices
@@ -68,18 +66,25 @@ class TrialRunner:
 			or (isinstance(val, int) and val >= 0))  # zero OK; just computes initial state
 		self.steps = val
 
-	# This object does NOT mutate any members of TrialRunner.
-	# It runs a full trial from scratch.
-	def run_trial(self, verbose=False):
+	def _validate_ready(self):
 		for (var, name) in [
 			(self.initial_circuit, 'initial circuit'),
 			(self.measured_edge, 'measured edge'),
 			(self.deletion_mode, 'deletion mode'),
 			(self.selection_mode, 'selection mode'),
-			(self.cbprovider, 'cyclebasis provider'),
+			(self.cbupdater_cls, 'cyclebasis updater class'),
 		]:
 			if var == self.NOT_SET:
 				raise RuntimeError('{} is not set'.format(name))
+
+		for v in self.measured_edge:
+			if v not in self.initial_circuit:
+				raise RuntimeError('Measured edge contains node {} not in graph!'.format(repr(v)))
+
+	# This object does NOT mutate any members of TrialRunner.
+	# It runs a full trial from scratch.
+	def run_trial(self, verbose=False):
+		self._validate_ready()
 
 		if verbose:
 			notice('Initializing trial')
@@ -99,10 +104,6 @@ class TrialRunner:
 		for v in self.measured_edge:
 			choices.remove(v)
 
-		initialcb = self.cbprovider.new_cyclebasis(g)
-		cbupdater = self.cbprovider.cbupdater()
-		solver = MeshCurrentSolver(g, initialcb, cbupdater)
-
 		result = {}
 		result['graph'] = {
 			'num_deletable': len(choices),
@@ -111,7 +112,7 @@ class TrialRunner:
 		}
 		result['steps'] = self._run_trial_steps(
 			verbose=verbose,
-			solver=solver,
+			solver=MeshCurrentSolver(g, self.initial_cycles, self.cbupdater_cls()),
 			deleter=self.deletion_mode.deleter(g),
 			selector=self.selection_mode.selector(g),
 			choice_set=choices,
@@ -194,6 +195,13 @@ def unlimited_range(start=0, step=1):
 	while True:
 		yield i
 		i += step
+
+# for extremely large objects this is more performant over copy.deepcopy.
+# however it does not preserve object identity, and fails if the structure contains
+#   certain "fun" things like a closure or a reference to an inner class
+def fastcopy(obj):
+	import pickle
+	return pickle.loads(pickle.dumps(obj))
 
 # FIXME: carryover from when the trial runner was fully contained in one module
 # think logger.info, except the name `info` already belonged to

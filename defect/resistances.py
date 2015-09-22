@@ -102,28 +102,31 @@ def main():
 	args.config = get_optional_path(args.config, '.defect.toml', '--config')
 	args.output_json = get_optional_path(args.output_json, '.results.json', '--output-json')
 
+	# save the user some grief; fail early if output paths are not writable
+	for path in (args.output_json, args.output_pstats):
+		if path is not None:
+			die_if_not_writable(path)
+
+	# load input files
 	config = Config.from_file(args.config)
 
 	g = load_circuit(args.input)
+	cbprovider = cbprovider_from_args(basename, args)
 
+	# setup
 	runner = TrialRunner()
+	runner.set_initial_circuit(g)
+	runner.set_initial_choices(set(g) - set(config.get_no_defect()))
+	runner.set_initial_cycles(cbprovider.new_cyclebasis(g))
+	runner.set_measured_edge(*config.get_measured_edge())
 	runner.set_selection_mode(SELECTION_MODES[args.selection_mode])
 	runner.set_deletion_mode(DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius, single_defect=args.Dsingle_defect)) # XXX
-	runner.set_cyclebasis_provider(cbprovider_from_args(basename, args))
 	if args.steps is not None:
 		runner.set_step_limit(args.steps)
 	else:
 		runner.unset_step_limit()
 	runner.set_defects_per_step(args.substeps)
-	runner.set_measured_edge(*config.get_measured_edge())
-	runner.set_initial_circuit(g)
-	runner.set_initial_choices(set(g) - set(config.get_no_defect()))
 	runner.set_end_on_disconnect(args.end_on_disconnect)
-
-	# save the user some grief; fail early if output paths are not writable
-	for path in (args.output_json, args.output_pstats):
-		if path is not None:
-			die_if_not_writable(path)
 
 	# The function that worker threads will invoke
 	cmd_once = functools.partial(TrialRunner.run_trial, verbose=args.verbose)
@@ -154,7 +157,7 @@ def main():
 
 	info['selection_mode'] = runner.selection_mode.info()
 	info['defect_mode'] = runner.deletion_mode.info()
-	info['cyclebasis_gen'] = runner.cbprovider.info()
+	info['cyclebasis_gen'] = cbprovider.info()
 
 	info['process_count'] = args.jobs
 	info['profiling_enabled'] = (args.output_pstats is not None)
