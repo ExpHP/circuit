@@ -39,7 +39,7 @@ SELECTION_MODES = {
 # XXX  I don't want to deal with subparsers yet. Not all options apply
 # XXX  to all modes
 DELETION_MODES = { # XXX
-	'remove':   lambda **kw: node_deletion.annihilation(kw['radius'], kw['single_defect']),
+	'remove':   lambda **kw: node_deletion.annihilation(kw['radius']),
 	'multiply': lambda **kw: node_deletion.multiply_resistance(kw['strength'], False, kw['radius']),
 	'assign':   lambda **kw: node_deletion.multiply_resistance(kw['strength'], True,  kw['radius']),
 }
@@ -79,7 +79,6 @@ def main():
 	# XXX temporary hack - options for configuring deletion modes because
 	# XXX  I don't want to deal with subparsers yet. Not all options apply
 	# XXX  to all modes
-	parser.add_argument('--Dsingle-defect', action='store_true')
 	parser.add_argument('--Dstrength', type=float, default=10.)
 	parser.add_argument('--Dradius', type=int, default=1)
 
@@ -120,7 +119,7 @@ def main():
 	runner.set_initial_cycles(cbprovider.new_cyclebasis(g))
 	runner.set_measured_edge(*config.get_measured_edge())
 	runner.set_selection_mode(SELECTION_MODES[args.selection_mode])
-	runner.set_deletion_mode(DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius, single_defect=args.Dsingle_defect)) # XXX
+	runner.set_deletion_mode(DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius)) # XXX
 	if args.steps is not None:
 		runner.set_step_limit(args.steps)
 	else:

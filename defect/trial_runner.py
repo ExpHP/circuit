@@ -150,31 +150,16 @@ class TrialRunner:
 				if trial_should_end():
 					break  # we're done, period (the final step has already been recorded)
 
-				# TODO: change this back to 1 defect per substep
-				# Each substep represents an "event", which introduces 1 or more defects.
+				# Each substep introduces a defect.
 				for _ in range(self.substeps):
 					if trial_should_end():
-						break  # stop simulating events (but do record this final step)
+						break  # stop adding defects (but do record this final step)
 
-					initial_choices = len(choice_set)
-
-					# Get event center
 					vcenter = selector.select_one(choice_set)
+					choice_set.remove(vcenter)
+					defects.append(vcenter)
 
-					# The deleter will return one or more nodes which are no longer eligible
-					#  to be an event center after this substep.
-					new_deleted = deleter.delete_one(solver, vcenter, cannot_touch=self.measured_edge)
-
-					# A 'defect' is defined as a node which formerly was (but is no longer)
-					#  eligible to be an event center.
-					new_defects = set(new_deleted) & choice_set
-					choice_set.difference_update(new_defects)
-					defects.extend(new_defects)
-
-					# Require at least one defect per substep.
-					# Now that Deleter is in control of which choices are removed, this is an artificial
-					#  restraint at best... but it is a desirable one.
-					assert len(choice_set) < initial_choices, "defect count did not increase this substep!"
+					deleter.delete_one(solver, vcenter, cannot_touch=self.measured_edge)
 
 			# the big heavy calculation!
 			current = solver.get_current(*self.measured_edge)
