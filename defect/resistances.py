@@ -130,10 +130,17 @@ def main():
 	cmd_wrapper = TempfileWrapper(cmd_once, g=g) # must keep a reference to the wrapper
 	cmd_once = cmd_wrapper.func
 
+	# Callbacks for reporting when a trial starts/ends
+	def onstart(trial, ntrials):
+		if args.verbose:
+			notice('Starting trial %s (of %s)', trial+1, ntrials)
+	def onend(trial, ntrials):
+		pass
+
 	if args.jobs == 1:
-		cmd_all = lambda: run_sequential(cmd_once, times=args.trials)
+		cmd_all = lambda: run_sequential(cmd_once, times=args.trials, onstart=onstart, onend=onend)
 	else:
-		cmd_all = lambda: run_parallel(cmd_once, threads=args.jobs, times=args.trials)
+		cmd_all = lambda: run_parallel(cmd_once, threads=args.jobs, times=args.trials, onstart=onstart, onend=onend)
 
 	if args.output_pstats is not None:
 		assert args.jobs == 1
@@ -203,21 +210,33 @@ def die_if_not_writable(path):
 	except IOError as e:
 		die("Could not verify %r as writable:\n%s", path, e)
 
-def run_sequential(f,*,times):
-	return [f() for _ in range(times)]
+def run_sequential(f,*,times,onstart=None,onend=None):
+	result = []
+	for i in range(times):
+		if onstart: onstart(i, times)  # for e.g. reporting
+		result.append(f())
+		if onend: onend(i, times)
+	return result
 
-def run_parallel(f,*,threads,times):
+def run_parallel(f,*,threads,times,onstart=None,onend=None):
 
 	# Give each trial a unique seed
 	baseseed = time.time()
-	seeds = [baseseed + i for i in range(times)]
+	arglists = [(i, baseseed+i) for i in range(times)]
 
-	def run_with_seed(seed):
+	def run_with_seed(args):
+		i,seed = args
+
 		random.seed(seed)
-		return f()
+
+		if onstart: onstart(i, times)  # for e.g. reporting
+		result = f()
+		if onend: onend(i, times)
+
+		return result
 
 	p = Pool(threads)
-	return multiprocessing_dill.map(p, run_with_seed, seeds, chunksize=1)
+	return multiprocessing_dill.map(p, run_with_seed, arglists, chunksize=1)
 
 def wrap_with_profiling(pstatsfile, f):
 	def wrapped(*args, **kwargs):
@@ -236,9 +255,6 @@ def wrap_with_profiling(pstatsfile, f):
 
 def run_trial_nx(g, steps, cbprovider, selection_mode, deletion_mode, measured_edge, *, no_defect=[], substeps=1, verbose=False, end_on_disconnect=True):
 	no_defect = set(no_defect)
-
-	if verbose:
-		notice('Starting')
 
 	selector = selection_mode.selector(g)
 	deleter  = deletion_mode.deleter(g)
