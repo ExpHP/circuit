@@ -113,7 +113,7 @@ def draw_circuit(g, pos):
 	draw_nodes = partial(nx.draw_networkx_nodes, g, ax=ax, pos=pos)
 	draw_edges = partial(nx.draw_networkx_edges, g, ax=ax, pos=pos)
 
-	draw_nodes(node_size=50.)
+	draw_nodes(node_color='k', node_size=50.)
 	draw_edges(edgelist=resistors, edge_color='b', width=2., label='resistor')
 	draw_edges(edgelist=batteries, edge_color='r', width=2., label='battery')
 	draw_edges(edgelist=wildedges, edge_color='m', width=2., label='unusual')
