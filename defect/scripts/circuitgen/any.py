@@ -9,10 +9,12 @@ import argparse, sys
 
 from . import hex_bridge
 from . import mos2
+from . import square
 
 ENTRY_POINTS = {
 	'graphene':hex_bridge.main,
 	'mos2':mos2.main,
+	'square':square.main,
 }
 
 def main():
