@@ -50,6 +50,7 @@ setup(
 		'console_scripts':[
 			'defect-trial = defect.resistances:main',
 			'defect-gen = defect.scripts.circuitgen.any:main',
+			'defect-view = defect.scripts.plotting.circuit:main',
 		],
 	},
 
