@@ -91,30 +91,23 @@ class _by_deleted_neighbors_Selector(Selector):
 	def __init__(self, owner, g):
 		self.weights = list(owner.weights)
 		self.initial_g = g.copy()
-		self.past_selections = []
+		self.weight_idx = {v:0 for v in self.initial_g}
 
 	def is_done(self):
 		return False
 
 	def select_one(self, choices):
 		choices = list(choices) # make reusable iter
+		idx = self.weight_idx # bind to frequently-used member
 
-		# count previously selected neighbors of each choice
-		# (initial_g is used as, depending on the defect mode, those neighbors
-		#  may no longer exist in g!)
-		weight_ids = {v:0 for v in choices}
-		for s in self.past_selections:
-			for t in self.initial_g.neighbors(s):
-				if t in weight_ids:
-					weight_ids[t] += 1
-
-		# use last element of self.weights for elements with too many deleted neighbors
-		weight_ids = {v:min(weight_ids[v], len(self.weights)-1) for v in weight_ids}
-
-		choice_weights = (self.weights[weight_ids[v]] for v in choices)
-
+		choice_weights = (self.weights[idx[x]] for x in choices)
 		v = pick_weighted(choices, choice_weights)
-		self.past_selections.append(v)
+
+		# increase weight for future iterations (up to the max supported weight)
+		max_idx = len(self.weights)-1
+		for nbr in self.initial_g.neighbors(v):
+			idx[nbr] = min(idx[nbr]+1, max_idx)
+
 		return v
 
 #--------------------------------------------------------
