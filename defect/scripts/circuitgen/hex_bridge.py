@@ -7,7 +7,7 @@ import argparse
 import numpy as np
 import networkx as nx
 
-import defect.resistances
+import defect.trial
 from defect.circuit import save_circuit
 from defect.util import zip_dict
 import defect.filetypes.internal as fileio
@@ -125,7 +125,7 @@ def save_output(path, do_cb, g, xs, ys, measure_edge, no_defect):
 	pos = zip_dict(xs, ys)
 	fileio.gpos.write_gpos(pos, gpos_path)
 
-	config = defect.resistances.Config()
+	config = defect.trial.Config()
 	config.set_measured_edge(*measure_edge)
 	config.set_no_defect(no_defect)
 	config.save(basename + '.defect.toml')

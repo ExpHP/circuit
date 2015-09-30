@@ -186,12 +186,12 @@ def trim_trial_by_current(trial_info, threshold=0.0):
 #  tries to simulate a trial, which means any changes to the trial runner may
 #  need to be reflected here
 def trial_edge_currents_at_step(g, cycles, info, trialid, step):
-	from defect.components import node_deletion
-	from defect.components.cyclebasis_provider import builder_cbupdater
+	from defect.trial import node_deletion
+	from defect.trial.cyclebasis_provider import builder_cbupdater
 	from defect.circuit import MeshCurrentSolver
 
 	# get the deletion func
-	deletion_mode = components.node_deletion.from_info(info['defect_mode'])
+	deletion_mode = node_deletion.from_info(info['defect_mode'])
 	deletion_func = deletion_mode.deletion_func
 
 	# gather all vertices deleted at the specified step

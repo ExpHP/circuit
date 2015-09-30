@@ -4,7 +4,7 @@ import unittest
 import itertools
 import sys
 
-from defect.components.node_selection import *
+from defect.trial.node_selection import *
 
 from scipy.stats import binom
 import numpy as np

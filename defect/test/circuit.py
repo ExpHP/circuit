@@ -4,7 +4,7 @@ import unittest
 import random
 
 from defect.circuit import *
-from defect.components import cyclebasis_provider
+from defect.trial import cyclebasis_provider
 
 class MiscCurrentTests(unittest.TestCase):
 	# A circuit with multiple connected components that each contain cycles;

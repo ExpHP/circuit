@@ -2,7 +2,6 @@
 
 import os
 import sys
-import math
 import random
 import time
 import functools
@@ -11,23 +10,18 @@ try:
 except ImportError:
 	import profile
 
-from defect.trial_runner import TrialRunner
+from defect.trial import TrialRunner
+from defect.trial import Config
+from defect.trial import node_selection, node_deletion
 
-import networkx as nx
-import numpy as np
+import defect.graph.cyclebasis as gcb
+
 import json
-import toml
 
 from multiprocessing import Pool
 from defect.util import multiprocessing_dill, TempfileWrapper
 
-from defect.circuit import MeshCurrentSolver, CircuitBuilder, load_circuit
-from defect import graph
-import defect.graph.path as vpath
-
-from defect.components import node_selection, node_deletion, cyclebasis_provider
-
-from defect import util
+from defect.circuit import load_circuit
 
 # TODO: maybe implement subparsers for these, and put in the node_selection/deletion
 #   modules since these need to be updated for each new mode
@@ -110,16 +104,19 @@ def main():
 	config = Config.from_file(args.config)
 
 	g = load_circuit(args.input)
-	cbprovider = cbprovider_from_args(basename, args)
+	cycles = cyclebasis_from_args(g, basename, args)
+
+	selection_mode = SELECTION_MODES[args.selection_mode]
+	deletion_mode  = DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius)
 
 	# setup
 	runner = TrialRunner()
 	runner.set_initial_circuit(g)
 	runner.set_initial_choices(set(g) - set(config.get_no_defect()))
-	runner.set_initial_cycles(cbprovider.new_cyclebasis(g))
+	runner.set_initial_cycles(cycles)
 	runner.set_measured_edge(*config.get_measured_edge())
-	runner.set_selection_mode(SELECTION_MODES[args.selection_mode])
-	runner.set_deletion_mode(DELETION_MODES[args.deletion_mode](strength=args.Dstrength, radius=args.Dradius)) # XXX
+	runner.set_selection_mode(selection_mode)
+	runner.set_deletion_mode(deletion_mode)
 	if args.steps is not None:
 		runner.set_step_limit(args.steps)
 	else:
@@ -154,9 +151,8 @@ def main():
 
 	info = {}
 
-	info['selection_mode'] = runner.selection_mode.info()
-	info['defect_mode'] = runner.deletion_mode.info()
-	info['cyclebasis_gen'] = cbprovider.info()
+	info['selection_mode'] = selection_mode.info()
+	info['defect_mode'] = deletion_mode.info()
 
 	info['process_count'] = args.jobs
 	info['profiling_enabled'] = (args.output_pstats is not None)
@@ -172,11 +168,11 @@ def main():
 		with open(args.output_json, 'w') as f:
 			f.write(s)
 
-def cbprovider_from_args(basename, args):
+def cyclebasis_from_args(g, basename, args):
 	# The order to check is
 	# User Cycles --> User Planar --> Auto Cycles --> Auto Planar --> "Nothing found"
-	def from_cycles(path): return cyclebasis_provider.from_file(path)
-	def from_planar(path): return cyclebasis_provider.planar.from_gpos(path)
+	def from_cycles(path): return gcb.from_file(path).new_cyclebasis(g)
+	def from_planar(path): return gcb.planar.from_gpos(path).new_cyclebasis(g)
 
 	for userpath, constructor in [
 		(args.cyclebasis_cycles, from_cycles),
@@ -259,51 +255,12 @@ def wrap_with_profiling(pstatsfile, f):
 		return result
 	return wrapped
 
+# FIXME I seriously cannot remember why I'm using this over ``os.path.splitext``.
 def drop_extension(path):
 	head,tail = os.path.split(path)
 	if '.' in tail:
 		tail, _ = tail.rsplit('.', 1)
 	return os.path.join(head, tail)
-
-class Config:
-	def __init__(self, measured_edge=None, no_defect=None):
-		self.__edge = None
-		self.__no_defect = None
-		if measured_edge is not None: self.set_measured_edge(*measured_edge)
-		if no_defect is not None: self.set_no_defect(no_defect)
-
-	def set_measured_edge(self, s, t): self.__edge = [s,t]
-	def set_no_defect(self, d):     self.__no_defect = list(d)
-
-	def get_measured_edge(self): return tuple(self.__edge)
-	def get_no_defect(self):  return list(self.__no_defect)
-
-	@classmethod
-	def from_file(cls, path):
-		with open(path) as f:
-			s = f.read()
-		return cls.deserialize(s)
-
-	def save(self, path):
-		s = self.serialize()
-		with open(path, 'w') as f:
-			f.write(s)
-
-	@classmethod
-	def deserialize(cls, s):
-		d = toml.loads(s)
-		measured_edge = tuple(d['general']['measured_edge'])
-		no_defect = list(d['general']['no_defect'])
-		return cls(measured_edge, no_defect)
-
-	def serialize(self):
-		d = {
-			'general': {
-				'measured_edge': self.__edge,
-				'no_defect': self.__no_defect,
-			},
-		}
-		return toml.dumps(d)
 
 def validating_conversion(basetype, pred, failmsg):
 	import argparse

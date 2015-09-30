@@ -6,7 +6,7 @@ import scipy.sparse.linalg as spla
 import networkx as nx
 
 import defect.filetypes.internal as fileio
-from defect.components import cyclebasis_provider
+import defect.graph.cyclebasis as gcb
 import defect.graph.path as vpath
 from defect.util import dict_inverse, edictget
 
@@ -365,7 +365,7 @@ class MeshCurrentSolver:
 	'''
 	def __init__(self, circuit, cyclebasis, cbupdater=None):
 		if cbupdater is None:
-			cbupdater = cyclebasis_provider.dummy_cbupdater()
+			cbupdater = gcb.dummy_cbupdater()
 
 		validate_circuit(circuit)
 
@@ -582,9 +582,9 @@ def compute_circuit_currents(circuit, cyclebasis=None):
 	cyclebasis with a small total edge count.
 	'''
 	if cyclebasis is None:
-		cyclebasis = cyclebasis_provider.last_resort().new_cyclebasis(circuit)
+		cyclebasis = gcb.last_resort().new_cyclebasis(circuit)
 
-	solver = MeshCurrentSolver(circuit, cyclebasis, cyclebasis_provider.dummy_cbupdater())
+	solver = MeshCurrentSolver(circuit, cyclebasis, gcb.dummy_cbupdater())
 
 	d = solver.get_all_currents()
 	assert all(d[t,s] == -d[s,t] for s,t in d)

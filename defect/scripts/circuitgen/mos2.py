@@ -12,7 +12,7 @@ import networkx as nx
 import defect.graph.path as vpath
 from defect.buildcb import build_cyclebasis_terminal
 
-import defect.resistances
+import defect.trial
 import defect.filetypes.internal as fileio
 from defect.circuit import save_circuit
 
@@ -74,7 +74,7 @@ def save_output(path, g, xys, measure_edge):
 	# note we do not produce '.planar.gpos' because this is not planar!
 	fileio.gpos.write_gpos(xys, basename + '.display.gpos')
 
-	config = defect.resistances.Config()
+	config = defect.trial.Config()
 	config.set_measured_edge(*measure_edge)
 	config.set_no_defect([])
 	config.save(basename + '.defect.toml')

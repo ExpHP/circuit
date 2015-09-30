@@ -1,10 +1,10 @@
 
 from defect.circuit import CircuitBuilder
-from defect.components.node_deletion import *
+from defect.trial.node_deletion import *
 import unittest
 
 from defect.circuit import MeshCurrentSolver
-from defect.components.cyclebasis_provider import builder_cbupdater
+from defect.trial.cyclebasis_provider import builder_cbupdater
 import numpy as np
 
 from defect import util
