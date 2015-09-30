@@ -36,6 +36,7 @@ class TrialRunner:
 
 		self.set_initial_choices(self.CHOICES_ALL)
 		self.__initial_circuit = self.NOT_SET
+		self.__initial_cycles  = self.NOT_SET
 		self.__measured_edge   = self.NOT_SET
 
 		self.set_end_on_disconnect(True)
@@ -92,6 +93,7 @@ class TrialRunner:
 	def _validate_ready(self):
 		for (var, name) in [
 			(self.__initial_circuit, 'initial circuit'),
+			(self.__initial_cycles, 'initial cycles'),
 			(self.__measured_edge, 'measured edge'),
 			(self.__deletion_mode, 'deletion mode'),
 			(self.__selection_mode, 'selection mode'),
