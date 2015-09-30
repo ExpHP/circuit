@@ -171,8 +171,8 @@ def main():
 def cyclebasis_from_args(g, basename, args):
 	# The order to check is
 	# User Cycles --> User Planar --> Auto Cycles --> Auto Planar --> "Nothing found"
-	def from_cycles(path): return gcb.from_file(path).new_cyclebasis(g)
-	def from_planar(path): return gcb.planar.from_gpos(path).new_cyclebasis(g)
+	def from_cycles(path): return gcb.from_file(path)
+	def from_planar(path): return gcb.planar.from_gpos(g, path)
 
 	for userpath, constructor in [
 		(args.cyclebasis_cycles, from_cycles),

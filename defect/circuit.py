@@ -582,7 +582,7 @@ def compute_circuit_currents(circuit, cyclebasis=None):
 	cyclebasis with a small total edge count.
 	'''
 	if cyclebasis is None:
-		cyclebasis = gcb.last_resort().new_cyclebasis(circuit)
+		cyclebasis = gcb.last_resort(circuit)
 
 	solver = MeshCurrentSolver(circuit, cyclebasis, gcb.dummy_cbupdater())
 

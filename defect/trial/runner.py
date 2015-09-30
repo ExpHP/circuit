@@ -109,9 +109,6 @@ class TrialRunner:
 	def run_trial(self, verbose=False):
 		self._validate_ready()
 
-		if verbose:
-			notice('Initializing trial')
-
 		# Generate stateful objects used in trial
 
 		# Initial graph is given directly to some object's constructors

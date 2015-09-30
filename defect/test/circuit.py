@@ -4,7 +4,7 @@ import unittest
 import random
 
 from defect.circuit import *
-from defect.trial import cyclebasis_provider
+import defect.graph.cyclebasis
 
 class MiscCurrentTests(unittest.TestCase):
 	# A circuit with multiple connected components that each contain cycles;
@@ -67,8 +67,9 @@ class MiscCurrentTests(unittest.TestCase):
 		currents = compute_circuit_currents(circuit)
 
 		# class results
-		cbprovider = cyclebasis_provider.last_resort()
-		solver = MeshCurrentSolver(circuit, cbprovider.new_cyclebasis(circuit), cbprovider.cbupdater())
+		cycles = defect.graph.cyclebasis.last_resort(circuit)
+		cbupdater = defect.graph.cyclebasis.builder_cbupdater()
+		solver = MeshCurrentSolver(circuit, cycles, cbupdater)
 
 		# consistent?
 		for s,t in g.edges():
