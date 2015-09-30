@@ -10,7 +10,7 @@ import defect.filetypes.internal as fileio
 import networkx as nx
 from defect.util import unzip_dict
 
-class planar:
+def planar(g, pos):
 	'''
 	Construct cyclebasis from planar embedding.
 
@@ -20,14 +20,14 @@ class planar:
 	 * ``planar.from_gpos(g, path)``, where ``path`` is a filepath to
 	    a ``.planar.gpos`` file that provides an embedding for ``g``.
 	'''
-	def __init__(self, g, pos):
-		xs,ys = unzip_dict(pos)
-		return _planar.planar_cycle_basis_nx(g, xs, ys)
+	xs,ys = unzip_dict(pos)
+	return _planar.planar_cycle_basis_nx(g, xs, ys)
 
-	@classmethod
-	def from_gpos(cls, g, path):
-		pos = fileio.gpos.read_gpos(path)
-		return cls(g, pos)
+# attach secondary method of invocation
+def _from_gpos(g, path):
+	pos = fileio.gpos.read_gpos(path)
+	return planar(g, pos)
+planar.from_gpos = _from_gpos
 
 def from_file(path):
 	'''
