@@ -84,16 +84,17 @@ class TrialTests(unittest.TestCase):
 	# automatically called at test end
 	# use this opportunity to confirm that we ran the test
 	def tearDown(self):
-		# Bit of a HACK here:
-		# We only want to run our tearDown tests if the test "succeeded," but because
-		#  tearDown is intended for cleanup, it does not differentiate between success
-		#  and failure.
-		# So we'll instead check if Python is in the middle of handling an exception:
-		if sys.exc_info() == (None, None, None):
-			return # test failed, one error is enough.
+		# only perform this check on test "success"
+		if not self._test_has_failed():
+			self.assertTrue(self.test_has_run, 'test was not run!')
 
-		self.assertTrue(self.test_has_run, 'forgot to actually run the test!')
-		self.assertFalse(PRODUCE_OUTPUTS, 'produced output instead of running tests')
+	def _test_has_failed(self):
+		# Terrible hack to determine if the test was a failure.
+		# Specific to Python 3.4+
+		for method, error in self._outcome.errors:
+			if error:
+				return True
+		return False
 
 	# Read .circuit and config files
 	# This needs to reproduce some of the logic in ``defect.trial.runner.main``
@@ -215,6 +216,7 @@ class TrialTests(unittest.TestCase):
 			node_deletion.multiply_resistance(factor=100., idempotent=True, radius=1)
 		)
 		self.assertRaisesRegexp(AssertionError, 'current mismatch', self.do_it)
+		self.test_has_run = True  # the above line counts as the test
 
 	def test_remove_full(self):
 		# tests consistency of results from remove mode

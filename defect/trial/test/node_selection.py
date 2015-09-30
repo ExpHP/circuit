@@ -98,13 +98,8 @@ class DistributionTests(unittest.TestCase):
 	# automatically called at test end
 	# use this opportunity to confirm that our test didn't miss anything
 	def tearDown(self):
-		# Bit of a HACK here:
-		# We only want to run our tearDown tests if the test "succeeded," but because
-		#  tearDown is intended for cleanup, it does not differentiate between success
-		#  and failure.
-		# So we'll instead check if Python is in the middle of handling an exception:
-		if sys.exc_info() == (None, None, None):
-			return # test failed, one error is enough.
+		if self._test_has_failed():
+			return # one error is enough
 
 		self.assertIs(self.status, self.STATUS_VALIDATE, 'unit test collected no data')
 
@@ -112,6 +107,14 @@ class DistributionTests(unittest.TestCase):
 		# (counts are removed from the dict when tested)
 		for k,v in self.counts.items():
 			self.assertEqual(v, 0, 'Ordering {} has nonzero count but was not tested!'.format(k))
+
+	def _test_has_failed(self):
+		# Terrible hack to determine if the test was a failure.
+		# Specific to Python 3.4+
+		for method, error in self._outcome.errors:
+			if error:
+				return True
+		return False
 
 	# Codegen.
 	# Yes, really.
