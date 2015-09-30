@@ -1,0 +1,3 @@
+[general]
+measured_edge = [ "bot", "top",]
+no_defect = []

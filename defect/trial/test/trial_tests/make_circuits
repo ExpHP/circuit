@@ -1,0 +1,2 @@
+#!/bin/sh
+defect-gen square -o square10.circuit 10 10
