@@ -3,7 +3,7 @@ import unittest
 import networkx as nx
 import math
 import random
-from defect.graph.cyclebasis.planar import *
+from defect.graph.cyclebasis._planar import *
 import defect.graph.path as vpath
 
 #----------------------------------------------------
