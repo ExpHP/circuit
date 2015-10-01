@@ -48,35 +48,55 @@ def main():
 	nonnegative_int = validating_conversion(int, lambda x: x>=0, 'is not a nonnegative integer')
 	positive_int = validating_conversion(int, lambda x: x>=1, 'is not a positive integer')
 
-	parser.add_argument('input', type=str, help='.gpickle file of networkx graph')
-	parser.add_argument('--verbose', '-v', action='store_true')
-	parser.add_argument('--jobs', '-j', type=positive_int, default=1, help='number of trials to run in parallel')
-	parser.add_argument('--trials', '-t', type=positive_int, default=1, help='number of trials to do total')
-	parser.add_argument('--steps', '-s', type=nonnegative_int, default=None, help='number of steps per trial')
-	parser.add_argument('--config', '-c', type=str, default=None, help='Path to defect trial config TOML. '
-		'Default is derived from circuit (BASENAME.defect.toml)')
-	parser.add_argument('--substeps', '-x', type=positive_int, default=1, help='number of defects added per step')
-	parser.add_argument('--output-json', '-o', type=str, default=None, help='output file. Default is derived '
-		'from circuit (BASENAME.results.json).')
-	parser.add_argument('--output-pstats', '-P', type=str, default=None, help='Record profiling info (implies --jobs 1)')
+	# Arguments (non-options)
+	parser.add_argument('input', type=str, help='.circuit file')
+
+	# General options
+	group = parser.add_mutually_exclusive_group()
+	group.add_argument('--verbose', '-v', action='store_true')
+	group.add_argument('--quiet', '-q', action='store_true')
+
+	parser.add_argument('--jobs', '-j', type=positive_int, default=1,
+		help='Number of trials to run in parallel. Default 1.')
+	parser.add_argument('--trials', '-t', type=positive_int, default=1,
+		help='Number of trials to do total. Default 1.')
+
+	parser.add_argument('--steps', '-s', type=nonnegative_int, default=None,
+		help='Maximum number of steps per trial. Default is no step limit.')
+	parser.add_argument('--substeps', '-x', type=positive_int, default=1,
+		help='Number of defects added per step. Default 1.')
+
+	parser.add_argument('--alltheway', dest='end_on_disconnect', action='store_false',
+		help='Always have a trial continue until there are no nodes left, even if the circuit is disconnected')
+
+	# auxillary input file options
+	parser.add_argument('--config', '-c', type=str, default=None,
+		help='Path to defect trial config TOML. Default is derived from circuit (BASENAME.defect.toml)')
+
+	group = parser.add_mutually_exclusive_group()
+	group.add_argument('--cyclebasis-cycles', type=str, default=None,
+		help='Path to cyclebasis file. Default is derived from circuit (BASENAME.cycles)')
+	group.add_argument('--cyclebasis-planar', type=str, default=None,
+		help='Path to planar embedding info, which can be provided in place of a .cycles file for planar graphs.'
+		' Default is BASENAME.planar.gpos.')
+
+	# output file options
+	parser.add_argument('--output-json', '-o', type=str, default=None,
+		help='Path for primary output file. Default is derived from circuit (BASENAME.results.json).')
+	parser.add_argument('--output-pstats', '-P', type=str, default=None,
+		help='Path to record profiling info (implies --jobs 1)')
+
+	# modes
 	parser.add_argument('--selection-mode', '-S', type=str, default='uniform', choices=SELECTION_MODES, help='TODO')
 	parser.add_argument('--deletion-mode', '-D', type=str, required=True, choices=DELETION_MODES, help='TODO')
-	parser.add_argument('--alltheway', dest='end_on_disconnect', action='store_false', help='always have a trial continue until there are no nodes left, even if the circuit is disconnected')
 
-	# cyclebasis options
-	group = parser.add_mutually_exclusive_group()
-	group.add_argument('--cyclebasis-cycles', type=str, default=None, help='Path to cyclebasis file. '
-		'Default is derived from circuit (BASENAME.cycles)')
-	group.add_argument('--cyclebasis-planar', type=str, default=None, help='Path to planar embedding info, which '
-		'can be provided in place of a .cycles file for planar graphs.  Default is BASENAME.planar.gpos.')
-
-	# XXX temporary hack - options for configuring deletion modes because
-	# XXX  I don't want to deal with subparsers yet. Not all options apply
-	# XXX  to all modes
+	# options for modes
+	# ..."temporary hack?"  *coff*
 	parser.add_argument('--Dstrength', type=float, default=10.)
 	parser.add_argument('--Dradius', type=int, default=1)
 
 	args = parser.parse_args(sys.argv[1:])
+	#------------
 
 	if (args.output_pstats is not None) and args.jobs != 1:
 		die('--output-pstats/-P is limited to --jobs 1\n'
@@ -88,7 +108,7 @@ def main():
 		autopath = basename + extension
 		if userpath is not None:
 			return userpath
-		if args.verbose:
+		if not args.quiet:
 			notice('Note: %s not specified!  Trying %r', argname, autopath)
 		return autopath
 
@@ -135,7 +155,7 @@ def main():
 
 	# Callbacks for reporting when a trial starts/ends
 	def onstart(trial, ntrials):
-		if args.verbose:
+		if not args.quiet:
 			notice('Starting trial %s (of %s)', trial+1, ntrials)
 	def onend(trial, ntrials):
 		pass
@@ -182,14 +202,14 @@ def cyclebasis_from_args(g, basename, args):
 			die_if_not_readable(userpath)
 			return constructor(userpath)
 
-	if args.verbose:
+	if not args.quiet:
 		notice('Note: "--cyclebasis-cycles" or "--cyclebasis-planar" not specified. Trying defaults...')
 	for autopath, constructor in [
 		(basename + '.cycles',      from_cycles),
 		(basename + '.planar.gpos', from_planar),
 	]:
 		if os.path.exists(autopath):
-			if args.verbose:
+			if not args.quiet:
 				notice('->Found possible cyclebasis info at %r', autopath)
 			die_if_not_readable(autopath)
 			return constructor(autopath)
