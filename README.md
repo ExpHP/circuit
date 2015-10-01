@@ -10,11 +10,11 @@ This is still *very much* in alpha and I consider very little of the codebase to
 
 # Dependencies
 
-* `networkx`
-* `numpy` and `scipy`
-* `pytoml`
-* `dill`
-* `cython`
+* [`networkx`](https://github.com/networkx/networkx)
+* [`numpy`](https://github.com/numpy/numpy) and [`scipy`](https://github.com/scipy/scipy)
+* [`pytoml`](https://github.com/avakar/pytoml)
+* [`dill`](https://pypi.python.org/pypi/dill)
+* [`cython`](http://cython.org/)
 * a `c++` compiler with support for `c++11` features
 
 **You need `python3`**.  There are currently no plans to support `python2`.
@@ -29,7 +29,15 @@ Or if you prefer using Pip to install python modules, try `pip3 install`.
 
 [Bugs go here](https://github.com/ExpHP/defect/issues).
 
+# Documentation
+
+...it's pretty low priority at the moment, considering that the total number of people to have ever touched this project is still 1.
+
 # Testing
 
-There are currently some doctests (which you can mass-invoke via `nosetests --with-doctest`), and in some places there are actually unit tests sprinkled around somewhat haphazardly at the module level (so that they run automatically when the library is loaded).  Generally speaking, though, the test coverage needs improvement.
+The testing situation has been improving as of late!  Enter the repo root and run `nosetests3`.
+
+The tests themselves are scattered around a bit.
+There are some `unittest`-style tests here, some doctests there... and in some older parts of the code there are actually unit tests for helper functions sprinkled around haphazardly at the module level (so that they run automatically when the library is loaded)!
+The test coverage is incomplete, but improving.
 
