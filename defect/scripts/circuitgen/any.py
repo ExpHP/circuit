@@ -10,11 +10,13 @@ import argparse, sys
 from . import hex_bridge
 from . import mos2
 from . import square
+from . import triangular
 
 ENTRY_POINTS = {
-	'graphene':hex_bridge.main,
+	'hexagonal':hex_bridge.main,
 	'mos2':mos2.main,
 	'square':square.main,
+	'triangular':triangular.main,
 }
 
 def main():
