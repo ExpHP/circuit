@@ -5,7 +5,7 @@ General circuit generation script
 Calls one of the predefined circuit generation scripts.
 '''
 
-import argparse, sys
+import argparse, sys, os
 
 from . import hex_bridge
 from . import mos2
@@ -21,6 +21,7 @@ ENTRY_POINTS = {
 
 def main():
 	progname, *argv = sys.argv
+	progname = os.path.split(progname)[1]
 	parser = argparse.ArgumentParser(prog=progname, description=DESC,
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 	)
