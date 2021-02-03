@@ -15,7 +15,7 @@ template <typename T, typename Comp>
 class VectorSet
 {
 public:
-	typedef VectorSet<T,Comp> Self; // rust shall soon rule the world!
+	typedef VectorSet<T,Comp> Self;
 	typedef typename std::vector<T>::iterator iterator;
 	typedef typename std::vector<T>::const_iterator const_iterator;
 
